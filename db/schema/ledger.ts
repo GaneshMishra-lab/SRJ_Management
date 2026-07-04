@@ -1,3 +1,4 @@
+import { entity, miscItem } from "../schema";
 import { auditTimestamps, integer, pgTable, real, text, timestamp, uniqueIndex, uuid } from "./shared";
 
 export const cashLedger = pgTable("cash_ledger", {
@@ -49,8 +50,8 @@ export const miscTrade = pgTable("misc_trade", {
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   type: text("type"),
-  entity: uuid("entity"),
-  item: uuid("item"),
+  entity: uuid("entity").notNull().references(() => entity.id),
+  item: uuid("item").notNull().references(()=> miscItem.id),
   qty: integer("qty"),
   unitPrice: real("unit_price"),
   amt: real("amt"),
