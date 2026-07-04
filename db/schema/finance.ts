@@ -1,8 +1,9 @@
-import { integer, pgTable, text, timestamp, uuid } from "./shared";
+import { auditTimestamps, integer, pgTable, text, timestamp, uuid } from "./shared";
 
 import { entity } from "./entities";
 
 export const loan = pgTable("loan", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   borrower: uuid("borrower").references(() => entity.id),
   date: timestamp("date", { mode: "string" }),
@@ -11,6 +12,7 @@ export const loan = pgTable("loan", {
 });
 
 export const loanRepayment = pgTable("loan_repayment", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   loan: uuid("loan").references(() => loan.id),
   repaymentDate: timestamp("data", { mode: "string" }),
@@ -19,6 +21,7 @@ export const loanRepayment = pgTable("loan_repayment", {
 });
 
 export const lend = pgTable("lend", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   lender: uuid("lender").references(() => entity.id),
   date: timestamp("date", { mode: "string" }),
@@ -27,6 +30,7 @@ export const lend = pgTable("lend", {
 });
 
 export const lendRepayment = pgTable("lend_repayment", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   lend: uuid("lend").references(() => lend.id),
   repaymentDate: timestamp("data", { mode: "string" }),

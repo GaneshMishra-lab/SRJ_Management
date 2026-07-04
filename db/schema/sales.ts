@@ -1,4 +1,5 @@
 import {
+  auditTimestamps,
   integer,
   pgTable,
   real,
@@ -10,6 +11,7 @@ import {
 import { entity } from "./entities";
 
 export const bill = pgTable("bill", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   supplier: uuid("supplier").references(() => entity.id),
   date: timestamp("date", { mode: "string" }),
@@ -20,6 +22,7 @@ export const bill = pgTable("bill", {
 });
 
 export const billPayment = pgTable("bill_payment", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   bill: uuid("bill").references(() => bill.id),
@@ -28,6 +31,7 @@ export const billPayment = pgTable("bill_payment", {
 });
 
 export const itemOrder = pgTable("item_order", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   customer: uuid("customer").references(() => entity.id),
   date: timestamp("date", { mode: "string" }),
@@ -40,6 +44,7 @@ export const itemOrder = pgTable("item_order", {
 });
 
 export const itemPurchased = pgTable("item_purchased", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   bill: uuid("bill").references(() => bill.id),
   name: text("name"),
@@ -54,6 +59,7 @@ export const itemPurchased = pgTable("item_purchased", {
 });
 
 export const oldItem = pgTable("old_item", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   customer: uuid("customer").references(() => entity.id),
   date: timestamp("date", { mode: "string" }),
@@ -69,6 +75,7 @@ export const oldItem = pgTable("old_item", {
 });
 
 export const itemStock = pgTable("item_stock", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   label: integer("label"),
@@ -78,6 +85,7 @@ export const itemStock = pgTable("item_stock", {
 });
 
 export const itemSaleBill = pgTable("item_sale_bill", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   customer: uuid("customer").references(() => entity.id),
@@ -86,6 +94,7 @@ export const itemSaleBill = pgTable("item_sale_bill", {
 });
 
 export const itemSale = pgTable("item_sale", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   item: uuid("item").references(() => itemStock.id),
   amt: integer("amt"),
@@ -93,6 +102,7 @@ export const itemSale = pgTable("item_sale", {
 });
 
 export const itemSaleDetails = pgTable("item_sale_details", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   sale: uuid("sale").references(() => itemSaleBill.id),
   date: timestamp("date", { mode: "string" }),
@@ -100,6 +110,7 @@ export const itemSaleDetails = pgTable("item_sale_details", {
 });
 
 export const itemRepairing = pgTable("item_repairing", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   customer: uuid("customer").references(() => entity.id),
   desc: text("desc"),
@@ -109,6 +120,7 @@ export const itemRepairing = pgTable("item_repairing", {
 });
 
 export const goldLoan = pgTable("gold_loan", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   customer: uuid("customer").references(() => entity.id),
   item: text("item"),
@@ -120,6 +132,7 @@ export const goldLoan = pgTable("gold_loan", {
 });
 
 export const goldLoanPayment = pgTable("gold_loan_payment", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   loan: uuid("loan").references(() => goldLoan.id),
   date: timestamp("date", { mode: "string" }),
@@ -129,6 +142,7 @@ export const goldLoanPayment = pgTable("gold_loan_payment", {
 });
 
 export const finePurchase = pgTable("fine_purchase", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   supplier: uuid("supplier").references(() => entity.id),

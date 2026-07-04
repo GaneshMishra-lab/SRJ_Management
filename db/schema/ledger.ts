@@ -1,6 +1,7 @@
-import { pgTable, real, text, timestamp, uniqueIndex, uuid, integer } from "./shared";
+import { auditTimestamps, integer, pgTable, real, text, timestamp, uniqueIndex, uuid } from "./shared";
 
 export const cashLedger = pgTable("cash_ledger", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   location: text("location"),
@@ -14,6 +15,7 @@ export const cashLedger = pgTable("cash_ledger", {
 export const dailyBalance = pgTable(
   "daily_balance",
   {
+    ...auditTimestamps(),
     id: uuid("id").defaultRandom().primaryKey(),
     date: timestamp("date", { mode: "string" }),
     location: text("location"),
@@ -32,6 +34,7 @@ export const dailyBalance = pgTable(
 );
 
 export const expense = pgTable("expense", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   category: text("category"),
@@ -42,6 +45,7 @@ export const expense = pgTable("expense", {
 });
 
 export const miscTrade = pgTable("misc_trade", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   type: text("type"),
@@ -54,6 +58,7 @@ export const miscTrade = pgTable("misc_trade", {
 });
 
 export const metalLedger = pgTable("metal_ledger", {
+  ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   date: timestamp("date", { mode: "string" }),
   metal: text("metal"),
