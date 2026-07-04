@@ -1,17 +1,50 @@
 CREATE TABLE "entity" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"name" text,
 	"type" text,
 	"contact" integer
 );
 --> statement-breakpoint
+CREATE TABLE "users" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" text NOT NULL,
+	"username" text NOT NULL,
+	"password_hash" text NOT NULL,
+	"role" text NOT NULL,
+	"is_active" boolean DEFAULT true NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "users_username_unique" ON "users" USING btree ("username");
+--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_role_check" CHECK ("role" in ('owner', 'staff', 'customer'));
+--> statement-breakpoint
+CREATE TABLE "audit_log" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"table_name" text NOT NULL,
+	"record_id" uuid NOT NULL,
+	"action" text NOT NULL,
+	"old_values" jsonb,
+	"new_values" jsonb,
+	"changed_by" integer,
+	"changed_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_action_check" CHECK ("action" in ('insert', 'update', 'delete'));
+--> statement-breakpoint
 CREATE TABLE "misc_category" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"name" text
 );
 --> statement-breakpoint
 CREATE TABLE "misc_item" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"category" uuid,
 	"name" text,
 	"desc" text,
@@ -20,6 +53,8 @@ CREATE TABLE "misc_item" (
 --> statement-breakpoint
 CREATE TABLE "lend" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"lender" uuid,
 	"date" timestamp,
 	"amt_lended" integer,
@@ -28,6 +63,8 @@ CREATE TABLE "lend" (
 --> statement-breakpoint
 CREATE TABLE "lend_repayment" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"lend" uuid,
 	"data" timestamp,
 	"amt" integer,
@@ -36,6 +73,8 @@ CREATE TABLE "lend_repayment" (
 --> statement-breakpoint
 CREATE TABLE "loan" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"borrower" uuid,
 	"date" timestamp,
 	"amt_borrowed" integer,
@@ -44,6 +83,8 @@ CREATE TABLE "loan" (
 --> statement-breakpoint
 CREATE TABLE "loan_repayment" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"loan" uuid,
 	"data" timestamp,
 	"amt" integer,
@@ -52,6 +93,8 @@ CREATE TABLE "loan_repayment" (
 --> statement-breakpoint
 CREATE TABLE "cash_ledger" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"location" text,
 	"direction" text,
@@ -63,6 +106,8 @@ CREATE TABLE "cash_ledger" (
 --> statement-breakpoint
 CREATE TABLE "daily_balance" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"location" text,
 	"opening_balance" real,
@@ -74,6 +119,8 @@ CREATE TABLE "daily_balance" (
 --> statement-breakpoint
 CREATE TABLE "expense" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"category" text,
 	"desc" text,
@@ -84,6 +131,8 @@ CREATE TABLE "expense" (
 --> statement-breakpoint
 CREATE TABLE "metal_ledger" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"metal" text,
 	"direction" text,
@@ -95,6 +144,8 @@ CREATE TABLE "metal_ledger" (
 --> statement-breakpoint
 CREATE TABLE "misc_trade" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"type" text,
 	"entity" uuid,
@@ -107,6 +158,8 @@ CREATE TABLE "misc_trade" (
 --> statement-breakpoint
 CREATE TABLE "bill" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"supplier" uuid,
 	"date" timestamp,
 	"rate" real,
@@ -117,6 +170,8 @@ CREATE TABLE "bill" (
 --> statement-breakpoint
 CREATE TABLE "bill_payment" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"bill" uuid,
 	"amt" real,
@@ -125,6 +180,8 @@ CREATE TABLE "bill_payment" (
 --> statement-breakpoint
 CREATE TABLE "fine_purchase" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"supplier" uuid,
 	"metal" text,
@@ -136,6 +193,8 @@ CREATE TABLE "fine_purchase" (
 --> statement-breakpoint
 CREATE TABLE "gold_loan" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"customer" uuid,
 	"item" text,
 	"weight" real,
@@ -147,6 +206,8 @@ CREATE TABLE "gold_loan" (
 --> statement-breakpoint
 CREATE TABLE "gold_loan_payment" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"loan" uuid,
 	"date" timestamp,
 	"amt" integer,
@@ -156,6 +217,8 @@ CREATE TABLE "gold_loan_payment" (
 --> statement-breakpoint
 CREATE TABLE "item_order" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"customer" uuid,
 	"date" timestamp,
 	"name" text,
@@ -168,6 +231,8 @@ CREATE TABLE "item_order" (
 --> statement-breakpoint
 CREATE TABLE "item_purchased" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"bill" uuid,
 	"name" text,
 	"metal" text,
@@ -182,6 +247,8 @@ CREATE TABLE "item_purchased" (
 --> statement-breakpoint
 CREATE TABLE "item_repairing" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"customer" uuid,
 	"desc" text,
 	"status" text,
@@ -191,6 +258,8 @@ CREATE TABLE "item_repairing" (
 --> statement-breakpoint
 CREATE TABLE "item_sale" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"item" uuid,
 	"amt" integer,
 	"bill" uuid
@@ -198,6 +267,8 @@ CREATE TABLE "item_sale" (
 --> statement-breakpoint
 CREATE TABLE "item_sale_bill" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"customer" uuid,
 	"total_amt" integer,
@@ -206,6 +277,8 @@ CREATE TABLE "item_sale_bill" (
 --> statement-breakpoint
 CREATE TABLE "item_sale_details" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"sale" uuid,
 	"date" timestamp,
 	"amt_paid" integer
@@ -213,6 +286,8 @@ CREATE TABLE "item_sale_details" (
 --> statement-breakpoint
 CREATE TABLE "item_stock" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"date" timestamp,
 	"label" integer,
 	"item" uuid,
@@ -222,6 +297,8 @@ CREATE TABLE "item_stock" (
 --> statement-breakpoint
 CREATE TABLE "old_item" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
 	"customer" uuid,
 	"date" timestamp,
 	"weight" real,
@@ -258,4 +335,5 @@ ALTER TABLE "item_stock" ADD CONSTRAINT "item_stock_old_item_source_old_item_id_
 ALTER TABLE "old_item" ADD CONSTRAINT "old_item_customer_entity_id_fk" FOREIGN KEY ("customer") REFERENCES "public"."entity"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "old_item" ADD CONSTRAINT "old_item_sale_bill_item_sale_bill_id_fk" FOREIGN KEY ("sale_bill") REFERENCES "public"."item_sale_bill"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "old_item" ADD CONSTRAINT "old_item_order_item_order_id_fk" FOREIGN KEY ("order") REFERENCES "public"."item_order"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_changed_by_users_id_fk" FOREIGN KEY ("changed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "daily_balance_date_location_uq" ON "daily_balance" USING btree ("date","location");
