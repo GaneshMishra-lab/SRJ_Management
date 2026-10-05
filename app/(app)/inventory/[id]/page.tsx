@@ -16,14 +16,14 @@ import {
   supplierReturnSettlement,
 } from "@/db/schema/sales";
 import { creditSupplierReturn, meltItem, returnFromApproval, returnToSupplier, sendOnApproval, settleSupplierReturn, settleSupplierReturnFine } from "@/app/actions/stock";
-import { DateField, Grams, Rupees, SelectField } from "@/components/ui";
+import { Card, DateField, Field, Grams, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateTime, grams, inr } from "@/lib/format";
 import { round2, round3 } from "@/lib/pricing";
 import { STANDARD_PURITY, Standard } from "@/lib/standards";
-import { cardClass, inputClass, labelClass, stockStatus } from "@/lib/styles";
+import { inputClass, linkClass, stockStatus } from "@/lib/styles";
 
 export default async function StockPiecePage({ params }: { params: Promise<{ id: string }> }) {
   await getCurrentUser();
@@ -107,7 +107,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
   if (piece.purchase) {
     timeline.push({
       when: piece.billDate,
-      text: <>Bought from {piece.supplierName ?? "supplier"} for {inr(piece.purchase.amt)} (<Link href={`/purchases/${piece.billId}`} className="text-amber-500 hover:text-amber-400">bill</Link>)</>,
+      text: <>Bought from {piece.supplierName ?? "supplier"} for {inr(piece.purchase.amt)} (<Link href={`/purchases/${piece.billId}`} className={linkClass}>bill</Link>)</>,
     });
   } else {
     timeline.push({ when: s.date, text: "Added to stock as a refurbished old item" });
@@ -121,7 +121,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
   for (const sale of sales) {
     timeline.push({
       when: sale.date,
-      text: <>Sold to {sale.customerName ?? "customer"} for {inr(sale.amt)} (<Link href={`/sales/${sale.billId}`} className="text-amber-500 hover:text-amber-400">bill</Link>)</>,
+      text: <>Sold to {sale.customerName ?? "customer"} for {inr(sale.amt)} (<Link href={`/sales/${sale.billId}`} className={linkClass}>bill</Link>)</>,
     });
     if (sale.cancelledAt) {
       timeline.push({ when: sale.cancelledAt, text: "That sale bill was cancelled; the piece came back into stock" });
@@ -136,180 +136,134 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/inventory" className="text-sm text-zinc-500 hover:text-zinc-300">← Inventory</Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">
-            {piece.typeName ?? "Piece"} #{s.label ?? "-"}
-          </h1>
-          {status && (
-            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${status.className}`}>{status.label}</span>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        back={{ href: "/inventory", label: "Inventory" }}
+        title={<>{piece.typeName ?? "Piece"} #{s.label ?? "-"}{status && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}</>}
+        subtitle={piece.purchase ? `Bought from ${piece.supplierName ?? "a supplier"}` : "Refurbished from old metal"}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[
-          { name: "Metal", value: s.metal ?? "-" },
-          { name: "Gross weight", value: grams(s.grossWeight) },
-          { name: "Net weight", value: grams(s.netWeight) },
-          { name: "Melting", value: `${s.melting ?? 0}%` },
-          { name: "HUID", value: s.huid ?? "-" },
-        ].map((stat) => (
-          <div key={stat.name} className={cardClass}>
-            <p className="text-sm text-zinc-400">{stat.name}</p>
-            <p className="mt-1 text-base sm:text-xl font-semibold text-zinc-100 break-words">{stat.value}</p>
-          </div>
-        ))}
-      </div>
+      <Stats items={[
+        { name: "Metal", value: s.metal ?? "-" },
+        { name: "Gross weight", value: grams(s.grossWeight) },
+        { name: "Net weight", value: grams(s.netWeight) },
+        { name: "Melting", value: `${s.melting ?? 0}%` },
+        { name: "HUID", value: s.huid ?? "-" },
+      ]} />
 
-      <div className={cardClass}>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">History</h2>
-        <ul className="space-y-3 text-sm">
+      <Card title="History">
+        <ol>
           {timeline.map((event, index) => (
-            <li key={index} className="flex flex-col sm:flex-row sm:gap-4">
-              <span className="shrink-0 text-zinc-500 sm:w-44">{dateTime(event.when)}</span>
-              <span className="text-zinc-300">{event.text}</span>
+            <li
+              key={index}
+              className="relative pb-5 pl-6 before:absolute before:top-[0.45rem] before:left-0 before:h-2 before:w-2 before:rounded-full before:bg-fg-4 after:absolute after:top-5 after:bottom-0 after:left-[3.5px] after:w-px after:bg-line last:pb-0 last:after:hidden"
+            >
+              <p className="text-sm text-fg">{event.text}</p>
+              <p className="text-[13px] text-fg-3">{dateTime(event.when)}</p>
             </li>
           ))}
-        </ul>
-      </div>
+        </ol>
+      </Card>
 
       {s.status === "stock" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className={cardClass}>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1">Send on approval</h2>
-            <p className="text-sm text-zinc-500 mb-4">The piece leaves the shop unsold.</p>
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+          <Card title="Send on approval" hint="The piece leaves the shop unsold.">
             <ActionForm action={sendOnApproval.bind(null, id)} submitLabel="Send out">
+              <SelectField
+                label="Taken by"
+                name="entity"
+                defaultValue=""
+                options={[{ value: "", label: "Select..." }, ...holders.map((holder) => ({ value: holder.id, label: `${holder.name} (${holder.type})` }))]}
+              />
               <div className="space-y-2">
-                <label htmlFor="entity" className={labelClass}>Taken by</label>
-                <select id="entity" name="entity" className={inputClass} defaultValue="">
-                  <option value="">Select...</option>
-                  {holders.map((holder) => (
-                    <option key={holder.id} value={holder.id}>{holder.name} ({holder.type})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="newName" className={labelClass}>Or a new customer</label>
-                <input id="newName" name="newName" type="text" placeholder="Name" className={inputClass} />
+                <Field label="Or a new customer" name="newName" type="text" placeholder="Name" />
                 <input name="newContact" type="tel" placeholder="Contact number (optional)" aria-label="New customer contact number" className={inputClass} />
               </div>
-              <div className="space-y-2">
-                <label htmlFor="note" className={labelClass}>Note (optional)</label>
-                <input id="note" name="note" type="text" className={inputClass} />
-              </div>
+              <Field label="Note (optional)" name="note" type="text" />
               <DateField />
             </ActionForm>
-          </div>
+          </Card>
 
           {piece.purchase && (
-            <div className={cardClass}>
-              <h2 className="text-lg font-semibold text-zinc-100 mb-1">Return to supplier</h2>
-              <p className="text-sm text-zinc-500 mb-4">The purchase bill stays as it is; the return is settled separately.</p>
+            <Card title="Return to supplier" hint="The purchase bill stays as it is; the return is settled separately.">
               <ActionForm action={returnToSupplier.bind(null, id)} submitLabel="Return piece">
-                <div className="space-y-2">
-                  <label htmlFor="ret-amt" className={labelClass}>Value taken back (₹)</label>
-                  <input id="ret-amt" name="amt" type="number" step="0.01" min="0.01" defaultValue={piece.purchase.amt ?? undefined} className={inputClass} required />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="ret-fine" className={labelClass}>Fine weight (g)</label>
-                  <input id="ret-fine" name="fine" type="number" step="0.001" min="0" defaultValue={purchaseFine} className={inputClass} />
-                </div>
+                <Rupees label="Value taken back (₹)" name="amt" defaultValue={piece.purchase.amt ?? undefined} required />
+                <Field label="Fine weight (g)" name="fine" type="number" step="0.001" min="0" defaultValue={purchaseFine} />
                 <DateField />
               </ActionForm>
-            </div>
+            </Card>
           )}
 
-          <div className={cardClass}>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1">Melt</h2>
-            <p className="text-sm text-zinc-500 mb-4">The piece becomes langdi. This cannot be undone.</p>
-            <ActionForm action={meltItem.bind(null, id)} submitLabel="Melt piece">
-              <div className="space-y-2">
-                <label htmlFor="melt-weight" className={labelClass}>Melted weight (g)</label>
-                <input id="melt-weight" name="weight" type="number" step="0.001" min="0.001" defaultValue={s.netWeight ?? undefined} className={inputClass} required />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="melt-purity" className={labelClass}>Estimated purity (%)</label>
-                <input id="melt-purity" name="estPurity" type="number" step="0.001" min="0.001" max="100" defaultValue={s.melting ?? undefined} className={inputClass} required />
-              </div>
+          <Card title="Melt" hint="The piece becomes langdi. This cannot be undone.">
+            <ActionForm action={meltItem.bind(null, id)} submitLabel="Melt piece" tone="danger">
+              <Grams label="Melted weight (g)" name="weight" defaultValue={s.netWeight ?? undefined} required />
+              <Percent label="Estimated purity (%)" name="estPurity" min="0.001" defaultValue={s.melting ?? undefined} required />
               <DateField />
             </ActionForm>
-          </div>
+          </Card>
         </div>
       )}
 
       {s.status === "on_approval" && (
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-100 mb-1">Out on approval</h2>
-          <p className="text-sm text-zinc-400 mb-4">
-            With {openApproval?.holderName ?? "unknown"} since {dateTime(openApproval?.approval.dateOut)}.
-            If they buy it, add it to a <Link href="/sales/new" className="text-amber-500 hover:text-amber-400">new sale</Link>.
-          </p>
+        <Card
+          title="Out on approval"
+          hint={
+            <>
+              With {openApproval?.holderName ?? "unknown"} since {dateTime(openApproval?.approval.dateOut)}.
+              If they buy it, add it to a <Link href="/sales/new" className={linkClass}>new sale</Link>.
+            </>
+          }
+        >
           <ActionForm action={returnFromApproval.bind(null, id)} submitLabel="Piece came back">
-            <div className="max-w-xs"><DateField label="Came back on (today if left empty)" /></div>
+            <DateField label="Came back on (today if left empty)" className="max-w-xs" />
           </ActionForm>
-        </div>
+        </Card>
       )}
 
       {supplierRet && (
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-100 mb-1">Supplier return</h2>
-          <p className="text-sm text-zinc-400 mb-4">
-            Value {inr(supplierRet.ret.amt)} · settled {inr(supplierRet.settled)} · still owed by supplier {inr(returnDue)}
-          </p>
-          {returnDue > 0 && (
-            <ActionForm action={settleSupplierReturn.bind(null, supplierRet.ret.id)} submitLabel="Record money received">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
-                <div className="space-y-2">
-                  <label htmlFor="settle-amt" className={labelClass}>Amount (₹)</label>
-                  <input id="settle-amt" name="amt" type="number" step="0.01" min="0.01" max={returnDue} className={inputClass} required />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="settle-mode" className={labelClass}>Received in</label>
-                  <select id="settle-mode" name="mode" className={inputClass}>
-                    <option value="cash">Cash (Vault)</option>
-                    <option value="online">Online (Bank)</option>
-                  </select>
-                </div>
-              </div>
-              <DateField />
-            </ActionForm>
-          )}
-          {returnDue > 0 && (
-            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 border-t border-zinc-800 pt-6">
+        <Card
+          title="Supplier return"
+          hint={`Value ${inr(supplierRet.ret.amt)} · settled ${inr(supplierRet.settled)} · still owed by supplier ${inr(returnDue)}`}
+        >
+          {returnDue <= 0 ? (
+            <p className="text-sm text-fg-3">This return is fully settled.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-3">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-200 mb-3">Or received in fine</h3>
-                <ActionForm action={settleSupplierReturnFine.bind(null, supplierRet.ret.id)} submitLabel="Record fine received">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Grams label="Fine weight (g)" name="weight" required />
-                    <SelectField label="Standard" name="standard" options={["995", "999"]} />
-                  </div>
+                <h3 className="mb-3 text-sm font-semibold text-fg">Money received</h3>
+                <ActionForm action={settleSupplierReturn.bind(null, supplierRet.ret.id)} submitLabel="Record money">
+                  <Rupees label="Amount (₹)" name="amt" max={returnDue} required />
+                  <SelectField label="Received in" name="mode" options={[{ value: "cash", label: "Cash (Vault)" }, { value: "online", label: "Online (Bank)" }]} />
+                  <DateField />
+                </ActionForm>
+              </div>
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-fg">Received in fine</h3>
+                <ActionForm action={settleSupplierReturnFine.bind(null, supplierRet.ret.id)} submitLabel="Record fine">
+                  <Grams label="Fine weight (g)" name="weight" required />
+                  <SelectField label="Standard" name="standard" options={["995", "999"]} />
                   <DateField />
                 </ActionForm>
               </div>
               {openBills.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-200 mb-3">Or credit against an unpaid bill</h3>
+                  <h3 className="mb-3 text-sm font-semibold text-fg">Credit against an unpaid bill</h3>
                   <ActionForm action={creditSupplierReturn.bind(null, supplierRet.ret.id)} submitLabel="Apply credit">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <SelectField
-                        label="Bill"
-                        name="bill"
-                        options={openBills.map((open) => ({
-                          value: open.id,
-                          label: `${dateTime(open.date)} · due ${inr((open.billAmt ?? 0) - (open.paidAmt ?? 0))}`,
-                        }))}
-                      />
-                      <Rupees label="Amount (₹)" name="amt" max={returnDue} required />
-                    </div>
+                    <SelectField
+                      label="Bill"
+                      name="bill"
+                      options={openBills.map((open) => ({
+                        value: open.id,
+                        label: `${dateTime(open.date)} · due ${inr((open.billAmt ?? 0) - (open.paidAmt ?? 0))}`,
+                      }))}
+                    />
+                    <Rupees label="Amount (₹)" name="amt" max={returnDue} required />
                     <DateField />
                   </ActionForm>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

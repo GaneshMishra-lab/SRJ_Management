@@ -77,7 +77,7 @@ export default async function LoansPage() {
 
       {sections.map((section) => (
         <div key={section.kind} className="space-y-4">
-          <h2 className="text-xl font-semibold text-zinc-100">{section.title}</h2>
+          <h2 className="font-serif text-[1.375rem] font-medium text-fg">{section.title}</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card title="New entry">
               <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
@@ -95,7 +95,7 @@ export default async function LoansPage() {
               right={[1]}
               empty="No accounts yet."
               rows={section.accounts.map((account) => [
-                <span key="n" className="font-medium text-zinc-200">{account.name}</span>,
+                <span key="n" className="font-medium text-fg">{account.name}</span>,
                 inr(account.balance),
               ])}
             />

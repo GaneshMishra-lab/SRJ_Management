@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { Sidebar } from "@/components/Sidebar";
 import { getCurrentUser } from "@/lib/dal";
+import { readTheme } from "@/lib/theme";
 
 export default async function AppLayout({
   children,
@@ -7,12 +9,15 @@ export default async function AppLayout({
   children: React.ReactNode;
 }>) {
   const user = await getCurrentUser();
+  const cookieStore = await cookies();
+  const sidebarClosed = cookieStore.get("sidebar")?.value === "closed";
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden lg:flex-row">
-      <Sidebar user={{ name: user.name, role: user.role }} />
-      <main className="min-w-0 flex-1 overflow-y-auto bg-zinc-900/50">
-        <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+      <Sidebar user={{ name: user.name, role: user.role }} defaultCollapsed={sidebarClosed} theme={readTheme(cookieStore.get("theme")?.value)} />
+      {/* Each page starts with its own toolbar, so there is no padding above it. */}
+      <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-page">
+        <div className="mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-10">
           {children}
         </div>
       </main>

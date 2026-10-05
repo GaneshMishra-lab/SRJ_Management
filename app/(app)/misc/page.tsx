@@ -78,7 +78,7 @@ export default async function MiscPage() {
         right={[3]}
         empty="No items yet. Add a category, then an item."
         rows={items.map((item) => [
-          <span key="n" className="font-medium text-zinc-200">{item.name}</span>,
+          <span key="n" className="font-medium text-fg">{item.name}</span>,
           item.categoryName,
           item.unit,
           item.inHand,

@@ -4,7 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createPurchase, createSupplier, PurchasePayload } from "@/app/actions/purchases";
 import { Plus, Trash2, CheckCircle2 } from "lucide-react";
-import { istDate } from "@/lib/format";
+import { Segmented } from "@/components/controls";
+import { Card, Field, SelectField, SummaryRow } from "@/components/ui";
+import { btn, iconButtonClass, labelClass } from "@/lib/styles";
+import { grams, inr, istDate } from "@/lib/format";
 import { STANDARDS, STANDARD_PURITY, Standard } from "@/lib/standards";
 
 type Supplier = { id: string; name: string | null };
@@ -132,318 +135,241 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
 
   if (success) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-emerald-500">
-        <CheckCircle2 className="h-16 w-16 mb-4" />
-        <h2 className="text-xl font-bold">Purchase Recorded Successfully!</h2>
-        <p className="text-zinc-400 mt-2">Redirecting to purchases...</p>
-      </div>
+      <Card>
+        <div className="flex flex-col items-center py-10 text-center">
+          <CheckCircle2 className="mb-3 h-10 w-10 text-ok" strokeWidth={1.5} />
+          <h2 className="font-serif text-xl font-medium text-fg">Purchase recorded</h2>
+          <p className="mt-1 text-sm text-fg-3">Taking you back to purchases...</p>
+        </div>
+      </Card>
     );
   }
 
+  const metalOrders = orders.filter(o => o.metal === formData.metal);
+  const balanceDue = Math.max(0, computedTotalAmt - formData.paidAmt);
+
+  // The bill on the left; what it comes to stays in view on the right while the items are filled in.
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Bill Details */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-300">Supplier</label>
-          <select 
-            className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none mb-2"
-            value={isNewSupplier ? "new" : formData.supplierId}
-            onChange={(e) => {
-              if (e.target.value === "new") {
-                setIsNewSupplier(true);
-              } else {
-                setIsNewSupplier(false);
-                setFormData({...formData, supplierId: e.target.value});
-              }
-            }}
-            required={!isNewSupplier}
-          >
-            <option value="">Select a supplier...</option>
-            {suppliers.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-            <option value="new">+ Add New Supplier</option>
-          </select>
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="space-y-6">
+        <Card title="Bill">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SelectField
+              label="Supplier"
+              className="sm:col-span-2"
+              value={isNewSupplier ? "new" : formData.supplierId}
+              onChange={(e) => {
+                if (e.target.value === "new") {
+                  setIsNewSupplier(true);
+                } else {
+                  setIsNewSupplier(false);
+                  setFormData({...formData, supplierId: e.target.value});
+                }
+              }}
+              required={!isNewSupplier}
+            >
+              <option value="">Select a supplier...</option>
+              {suppliers.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+              <option value="new">+ Add new supplier</option>
+            </SelectField>
 
-          {isNewSupplier && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input 
-                type="text"
-                className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
-                placeholder="Supplier name"
-                value={newSupplierName}
-                onChange={(e) => setNewSupplierName(e.target.value)}
-                autoFocus
-                required
-              />
-              <input 
-                type="number"
-                className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
-                placeholder="Contact number (optional)"
-                value={newSupplierContact}
-                onChange={(e) => setNewSupplierContact(e.target.value)}
-              />
-            </div>
-          )}
+            {isNewSupplier && (
+              <>
+                <Field
+                  label="New supplier name"
+                  type="text"
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  autoFocus
+                  required
+                />
+                <Field
+                  label="Contact number (optional)"
+                  type="tel"
+                  value={newSupplierContact}
+                  onChange={(e) => setNewSupplierContact(e.target.value)}
+                />
+              </>
+            )}
 
-          <div className="space-y-2 pt-2">
-            <label htmlFor="bill-date" className="text-sm font-medium text-zinc-300">Bill date <span className="text-zinc-500 font-normal">(today if left empty)</span></label>
-            <input
-              id="bill-date"
+            <Field
+              label="Bill date"
+              hint="Leave empty for today."
               type="date"
-              className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
               value={billDate}
               max={istDate()}
               onChange={(e) => setBillDate(e.target.value)}
             />
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-300">{formData.metal} Rate (₹/g fine)</label>
-            <input 
+            <div className="space-y-1.5">
+              <span className={labelClass}>Metal</span>
+              <Segmented
+                label="Metal"
+                className="w-full"
+                value={formData.metal}
+                onChange={(metal) => {
+                  setFormData({...formData, metal});
+                  setItems(items.map(item => ({ ...item, itemTypeId: "" })));
+                }}
+                options={[{ value: "Gold", label: "Gold" }, { value: "Silver", label: "Silver" }]}
+              />
+            </div>
+            <Field
+              label={`${formData.metal} rate (₹ per gram fine)`}
               type="number"
-              className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
               value={formData.rate || ''}
               onChange={(e) => setFormData({...formData, rate: Number(e.target.value)})}
               placeholder="e.g. 7000"
               required
             />
+            <SelectField label="Standard" value={standard} onChange={(e) => setStandard(e.target.value as Standard)}>
+              {STANDARDS.map(st => (
+                <option key={st} value={st}>{st}</option>
+              ))}
+            </SelectField>
           </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-300">Metal</label>
-              <select
-                className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
-                value={formData.metal}
-                onChange={(e) => {
-                  setFormData({...formData, metal: e.target.value});
-                  setItems(items.map(item => ({ ...item, itemTypeId: "" })));
-                }}
-              >
-                <option value="Gold">Gold</option>
-                <option value="Silver">Silver</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-300">Standard</label>
-              <select
-                className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none"
-                value={standard}
-                onChange={(e) => setStandard(e.target.value as Standard)}
-              >
-                {STANDARDS.map(st => (
-                  <option key={st} value={st}>{st}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-      </div>
+        </Card>
 
-      {/* Items List */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium text-zinc-200">Items</h3>
-          <button type="button" onClick={addItem} className="flex items-center gap-1 text-sm text-amber-500 hover:text-amber-400">
-            <Plus className="h-4 w-4" /> Add Item
-          </button>
-        </div>
-        
-        <div className="space-y-4">
-          {items.map((item, index) => (
-            <div key={index} className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 space-y-4 relative group">
-              {items.length > 1 && (
-                <button type="button" onClick={() => removeItem(index)} className="absolute top-4 right-4 text-zinc-500 hover:text-red-400 lg:opacity-0 lg:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity">
-                  <Trash2 className="h-5 w-5" />
-                </button>
-              )}
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pr-8">
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-xs font-medium text-zinc-400">Item Type</label>
-                  <select 
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
+        <Card
+          title="Items"
+          action={
+            <button type="button" onClick={addItem} className={btn("secondary", "sm")}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add item
+            </button>
+          }
+        >
+          <div className="divide-y divide-line">
+            {items.map((item, index) => (
+              <div key={index} className="space-y-4 py-5 first:pt-0 last:pb-0">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-fg">
+                    Item {index + 1}
+                    <span className="ml-2 font-normal text-fg-3 tabular-nums">
+                      {grams(calculatedItems[index].computedFine)} fine · {inr(calculatedItems[index].computedAmt)}
+                    </span>
+                  </p>
+                  {items.length > 1 && (
+                    <button type="button" onClick={() => removeItem(index)} aria-label={`Remove item ${index + 1}`} title="Remove" className={`-my-1 ${iconButtonClass} hover:text-bad`}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <SelectField
+                    label="Item type"
+                    className="col-span-2"
                     value={item.itemTypeId}
                     onChange={(e) => handleItemChange(index, "itemTypeId", e.target.value)}
                     required
                   >
-                    <option value="">Select Item Type</option>
+                    <option value="">Select item type</option>
                     {itemTypes.filter(it => it.metal === formData.metal).map(it => (
-                      <option key={it.id} value={it.id}>{it.name} ({it.metal})</option>
+                      <option key={it.id} value={it.id}>{it.name}</option>
                     ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Gross Wt (g)</label>
-                  <input 
+                  </SelectField>
+                  <Field
+                    label="Gross weight (g)"
                     type="number"
                     step="0.001"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.grossWeight || ''}
                     onChange={(e) => handleItemChange(index, "grossWeight", Number(e.target.value))}
                     required
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Net Wt (g)</label>
-                  <input
+                  <Field
+                    label="Net weight (g)"
                     type="number"
                     step="0.001"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.netWeight || ''}
                     onChange={(e) => handleItemChange(index, "netWeight", Number(e.target.value))}
-                    placeholder="same as gross"
+                    placeholder="Same as gross"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Purity/Melting (%)</label>
-                  <input 
+                  <Field
+                    label="Melting (%)"
                     type="number"
                     step="0.01"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.melting || ''}
                     onChange={(e) => handleItemChange(index, "melting", Number(e.target.value))}
                     placeholder="e.g. 91.6"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Wastage (%)</label>
-                  <input 
+                  <Field
+                    label="Wastage (%)"
                     type="number"
                     step="0.01"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.wastage || ''}
                     onChange={(e) => handleItemChange(index, "wastage", Number(e.target.value))}
                     placeholder="e.g. 5"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Making (₹/g)</label>
-                  <input 
+                  <Field
+                    label="Making (₹/g)"
                     type="number"
                     step="0.01"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.making || ''}
                     onChange={(e) => handleItemChange(index, "making", Number(e.target.value))}
                     placeholder="e.g. 400"
                   />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-zinc-400">Extra Chg (₹)</label>
-                  <input 
+                  <Field
+                    label="Extra charges (₹)"
                     type="number"
                     step="0.01"
-                    className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
                     value={item.extraCharges || ''}
                     onChange={(e) => handleItemChange(index, "extraCharges", Number(e.target.value))}
                     placeholder="e.g. 200"
                   />
-                </div>
-                {orders.some(o => o.metal === formData.metal) && (
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-xs font-medium text-zinc-400">Made for order (optional)</label>
-                    <select
-                      className="w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none"
+                  {metalOrders.length > 0 && (
+                    <SelectField
+                      label="Made for order (optional)"
+                      className="col-span-2"
                       value={item.orderId ?? ""}
                       onChange={(e) => handleItemChange(index, "orderId", e.target.value)}
                     >
                       <option value="">Not for an order</option>
-                      {orders.filter(o => o.metal === formData.metal).map(o => (
+                      {metalOrders.map(o => (
                         <option key={o.id} value={o.id}>{o.name} - {o.customerName}</option>
                       ))}
-                    </select>
-                  </div>
-                )}
+                    </SelectField>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Card>
       </div>
 
-      {/* Payment & Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-zinc-800 pt-6">
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-zinc-200">Payment details</h3>
-          
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-300">Fine {formData.metal} Due (g) <span className="text-zinc-500 font-normal">in lieu of cash (auto-calculated)</span></label>
-            <input 
-              type="text"
-              className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-400 px-4 py-2.5 outline-none bg-zinc-950/50 cursor-not-allowed"
-              value={computedTotalFine.toFixed(3)}
-              readOnly
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-300">Amount Paid Now</label>
-            <input 
+      <aside className="lg:sticky lg:top-24">
+        <Card title="Payment">
+          <div className="space-y-4">
+            <Field
+              label="Amount paid now (₹)"
               type="number"
-              className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 outline-none focus:ring-1 focus:ring-amber-500"
               value={formData.paidAmt || ''}
               onChange={(e) => setFormData({...formData, paidAmt: Number(e.target.value)})}
             />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-300">Payment Mode</label>
-            <select 
-              className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 outline-none focus:ring-1 focus:ring-amber-500"
-              value={formData.mode}
-              onChange={(e) => setFormData({...formData, mode: e.target.value})}
-            >
+            <SelectField label="Payment mode" value={formData.mode} onChange={(e) => setFormData({...formData, mode: e.target.value})}>
               <option value="cash">Cash (Vault)</option>
               <option value="online">Online (Bank)</option>
-            </select>
-          </div>
-        </div>
+            </SelectField>
 
-        <div className="rounded-2xl bg-amber-500/10 p-4 sm:p-6 flex flex-col justify-center border border-amber-500/20">
-          <div className="space-y-2">
-            <div className="flex justify-between text-zinc-400">
-              <span>Items Cash Total:</span>
-              <span>₹ {computedTotalAmt.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-amber-500/80 font-medium">
-              <span>Fine {formData.metal} Due:</span>
-              <span>{computedTotalFine.toFixed(3)} g</span>
-            </div>
-            <div className="border-t border-amber-500/20 my-2 pt-2 flex justify-between gap-3 text-lg sm:text-xl font-bold text-amber-500">
-              <span>Total Bill Amount:</span>
-              <span>₹ {computedTotalAmt.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-zinc-300 text-sm mt-4">
-              <span>Paid:</span>
-              <span className="text-emerald-400">₹ {formData.paidAmt.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-zinc-300 text-sm font-semibold">
-              <span>Balance Due:</span>
-              <span className="text-red-400">₹ {Math.max(0, computedTotalAmt - formData.paidAmt).toLocaleString()}</span>
+            <dl className="space-y-2 pt-1">
+              <SummaryRow label="Items total" value={inr(computedTotalAmt)} />
+              <SummaryRow label={`Fine ${formData.metal.toLowerCase()} due`} value={grams(computedTotalFine)} />
+              <SummaryRow label="Bill amount" value={inr(computedTotalAmt)} strong />
+              <SummaryRow label="Paid now" value={inr(formData.paidAmt)} tone="ok" />
+              <SummaryRow label="Balance due" value={inr(balanceDue)} tone={balanceDue > 0 ? "accent" : undefined} />
+            </dl>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <button type="submit" disabled={loading} className={btn()}>
+                {loading ? "Saving..." : "Save purchase"}
+              </button>
+              <button type="button" onClick={() => router.back()} className={btn("ghost")}>
+                Cancel
+              </button>
             </div>
           </div>
-        </div>
-      </div>
-
-      <div className="flex justify-end pt-4 border-t border-zinc-800">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="px-6 py-2.5 text-sm font-medium text-zinc-400 hover:text-zinc-100 transition-colors mr-4"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-8 py-2.5 rounded-xl bg-amber-500 text-zinc-950 text-sm font-semibold hover:bg-amber-400 disabled:opacity-50 transition-all shadow-lg shadow-amber-500/20"
-        >
-          {loading ? "Saving..." : "Save Purchase"}
-        </button>
-      </div>
+        </Card>
+      </aside>
     </form>
   );
 }

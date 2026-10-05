@@ -124,11 +124,11 @@ export default async function MetalPage() {
             // Entries made after the weighing move the ledger closing, so compare afresh.
             const difference = saved ? round3((saved.actualClosing ?? 0) - closing(pool.metal, pool.standard)) : 0;
             return (
-              <div key={`${pool.metal}-${pool.standard}`} className="rounded-xl border border-zinc-800 p-4">
-                <p className="font-medium text-zinc-200">{pool.metal} {pool.standard}</p>
-                <p className="mt-1 text-sm text-zinc-400">
+              <div key={`${pool.metal}-${pool.standard}`} className="rounded-xl border border-line p-4">
+                <p className="font-medium text-fg">{pool.metal} {pool.standard}</p>
+                <p className="mt-1 text-sm text-fg-2">
                   Opening {grams(opening(pool.metal, pool.standard))} · closing by ledger {grams(closing(pool.metal, pool.standard))}
-                  {saved && <> · weighed {grams(saved.actualClosing)} · difference <span className={difference === 0 ? "text-emerald-400" : "text-red-400"}>{grams(difference)}</span></>}
+                  {saved && <> · weighed {grams(saved.actualClosing)} · difference <span className={difference === 0 ? "text-ok" : "text-bad"}>{grams(difference)}</span></>}
                 </p>
                 <ActionForm action={closeMetalDay} submitLabel={saved ? "Update" : "Save"} className="mt-3 flex items-end gap-3">
                   <input type="hidden" name="date" value={today} />
@@ -142,7 +142,7 @@ export default async function MetalPage() {
         </div>
       </Card>
 
-      <h2 className="text-lg font-semibold text-zinc-100 pt-2">Langdi ledger</h2>
+      <h2 className="text-lg font-semibold text-fg pt-2">Langdi ledger</h2>
       <DataTable
         head={["Time", "Metal", "Details", "In", "Out", "Purity", "Fine"]}
         right={[3, 4]}
@@ -150,14 +150,14 @@ export default async function MetalPage() {
         rows={langdiEntries.map(({ entry, partyName }) => [
           <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
           entry.metal,
-          <span key="d" className="text-zinc-200">{entry.desc}{partyName ? ` · ${partyName}` : ""}{entry.amt ? ` · ${inr(entry.amt)}` : ""}</span>,
-          <span key="i" className="text-emerald-400">{entry.direction === "in" ? grams(entry.weight) : ""}</span>,
-          <span key="o" className="text-red-400">{entry.direction === "out" ? grams(entry.weight) : ""}</span>,
+          <span key="d" className="text-fg">{entry.desc}{partyName ? ` · ${partyName}` : ""}{entry.amt ? ` · ${inr(entry.amt)}` : ""}</span>,
+          <span key="i" className="text-ok">{entry.direction === "in" ? grams(entry.weight) : ""}</span>,
+          <span key="o" className="text-bad">{entry.direction === "out" ? grams(entry.weight) : ""}</span>,
           entry.direction === "in" ? (
             <div key="p" className="space-y-2">
               <p>est. {entry.estPurity ?? "-"}%{entry.testedPurity ? ` · tested ${entry.testedPurity}%` : ""}</p>
               <ActionForm action={setTestedPurity.bind(null, entry.id)} submitLabel="Set" className="flex items-center gap-2">
-                <input name="testedPurity" type="number" step="0.001" min="0.001" max="100" placeholder="Tested %" aria-label="Tested purity" className="w-28 rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 outline-none" required />
+                <input name="testedPurity" type="number" step="0.001" min="0.001" max="100" placeholder="Tested %" aria-label="Tested purity" className="w-28 rounded-lg bg-card border-line text-sm px-3 py-2 text-fg outline-none" required />
               </ActionForm>
             </div>
           ) : (entry.testedPurity ? `${entry.testedPurity}%` : "-"),
@@ -165,7 +165,7 @@ export default async function MetalPage() {
         ])}
       />
 
-      <h2 className="text-lg font-semibold text-zinc-100 pt-2">Fine metal ledger</h2>
+      <h2 className="text-lg font-semibold text-fg pt-2">Fine metal ledger</h2>
       <DataTable
         head={["Time", "Metal", "Details", "In", "Out"]}
         right={[3, 4]}
@@ -173,9 +173,9 @@ export default async function MetalPage() {
         rows={metalEntries.map((entry) => [
           <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
           `${entry.metal} ${entry.standard}`,
-          <span key="d" className="text-zinc-200">{entry.desc}</span>,
-          <span key="i" className="text-emerald-400">{entry.direction === "in" ? grams(entry.weight) : ""}</span>,
-          <span key="o" className="text-red-400">{entry.direction === "out" ? grams(entry.weight) : ""}</span>,
+          <span key="d" className="text-fg">{entry.desc}</span>,
+          <span key="i" className="text-ok">{entry.direction === "in" ? grams(entry.weight) : ""}</span>,
+          <span key="o" className="text-bad">{entry.direction === "out" ? grams(entry.weight) : ""}</span>,
         ])}
       />
     </div>

@@ -8,17 +8,17 @@ export default async function LoginPage() {
   if (await readSession()) redirect("/dashboard");
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
-      <div className="w-full max-w-sm space-y-8">
+    <div className="flex min-h-screen items-center justify-center px-6 py-12">
+      <div className="w-full max-w-sm">
         <div className="flex flex-col items-center text-center">
-          <Link href="/" className="bg-amber-500/10 p-3 rounded-xl">
-            <Gem className="h-8 w-8 text-amber-500" />
+          <Link href="/" aria-label="Shri Ram Jewellers home" className="rounded-full p-2">
+            <Gem className="h-8 w-8 text-accent" strokeWidth={1.5} />
           </Link>
-          <h1 className="mt-4 text-2xl font-bold text-zinc-100">Shri Ram Jewellers</h1>
-          <p className="mt-1 text-sm text-zinc-400">Staff login</p>
+          <h1 className="mt-4 text-[2rem] leading-tight text-fg">Shri Ram Jewellers</h1>
+          <p className="mt-2 text-fg-3">Sign in to the shop&apos;s books</p>
         </div>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-6 backdrop-blur-sm">
+        <div className="mt-8 rounded-2xl border border-line bg-card p-6 shadow-card">
           <LoginForm />
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui";
 import { PurchaseForm } from "@/components/PurchaseForm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
@@ -33,15 +34,9 @@ export default async function NewPurchasePage() {
     .where(inArray(itemOrder.status, ["order taken", "being made"]));
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">New Purchase</h1>
-        <p className="text-zinc-400 mt-1">Record a new incoming bill from a supplier.</p>
-      </div>
-
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-6 backdrop-blur-sm">
-        <PurchaseForm suppliers={suppliers} itemTypes={itemTypes} orders={orders} />
-      </div>
+    <div className="space-y-6">
+      <PageHeader title="New purchase" subtitle="An incoming bill from a supplier." back={{ href: "/purchases", label: "Purchases" }} />
+      <PurchaseForm suppliers={suppliers} itemTypes={itemTypes} orders={orders} />
     </div>
   );
 }

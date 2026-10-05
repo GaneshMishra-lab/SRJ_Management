@@ -49,7 +49,7 @@ export default async function OldGoldPage() {
         empty="No old metal recorded yet."
         rows={items.map(({ item, customerName }) => [
           <Link key="d" href={`/old-gold/${item.id}`} className={linkClass}>{dateOnly(item.date)}</Link>,
-          <span key="c" className="font-medium text-zinc-200">{customerName ?? "Unknown"}</span>,
+          <span key="c" className="font-medium text-fg">{customerName ?? "Unknown"}</span>,
           item.metal,
           grams(item.weight),
           `${item.melting ?? 0}%`,

@@ -46,7 +46,7 @@ export default async function GoldLoansPage() {
         empty="No gold loans yet."
         rows={loans.map(({ loan, customerName }) => [
           <Link key="d" href={`/gold-loans/${loan.id}`} className={linkClass}>{dateOnly(loan.date)}</Link>,
-          <span key="c" className="font-medium text-zinc-200">{customerName ?? "Unknown"}</span>,
+          <span key="c" className="font-medium text-fg">{customerName ?? "Unknown"}</span>,
           loan.item,
           grams(loan.weight),
           inr(loan.amt),

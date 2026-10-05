@@ -54,20 +54,20 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
       ]} />
 
       {loan.status === "closed" && interestDue > 0 && (
-        <p className="text-sm text-amber-500">Principal is fully repaid, but {inr(interestDue)} of interest was never collected.</p>
+        <p className="text-sm text-accent">Principal is fully repaid, but {inr(interestDue)} of interest was never collected.</p>
       )}
       {takenOver && (
-        <p className="text-sm text-zinc-400">The pledge was taken over as <Link href={`/old-gold/${takenOver.id}`} className={linkClass}>old metal</Link>.</p>
+        <p className="text-sm text-fg-2">The pledge was taken over as <Link href={`/old-gold/${takenOver.id}`} className={linkClass}>old metal</Link>.</p>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card title="Payments">
-          {payments.length === 0 ? <p className="text-sm text-zinc-500">No payments yet.</p> : (
-            <ul className="divide-y divide-zinc-800/50 text-sm">
+          {payments.length === 0 ? <p className="text-sm text-fg-3">No payments yet.</p> : (
+            <ul className="divide-y divide-line text-sm">
               {payments.map((payment) => (
                 <li key={payment.id} className="flex justify-between py-2">
-                  <span className="text-zinc-400">{dateTime(payment.date)} · {payment.type} · {payment.mode}</span>
-                  <span className="text-zinc-200">{inr(payment.amt)}</span>
+                  <span className="text-fg-2">{dateTime(payment.date)} · {payment.type} · {payment.mode}</span>
+                  <span className="text-fg">{inr(payment.amt)}</span>
                 </li>
               ))}
             </ul>

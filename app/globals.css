@@ -1,31 +1,162 @@
 @import "tailwindcss";
 
+/*
+  One set of colour tokens for the whole app: warm ivory surfaces, near-black ink, and a clay
+  accent that is used sparingly. Light is the base; dark applies when the device asks for it
+  (unless the user picked light) or when the user picked dark. The choice is the data-theme
+  attribute on <html>, set from a cookie.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  color-scheme: light;
+  --page: #faf9f5; /* the app background */
+  --sidebar: #f5f4ed;
+  --card: #ffffff; /* panels */
+  --field: #ffffff; /* inputs */
+  --sunken: #f0eee6; /* tracks, chips and other quiet fills */
+  --line: rgb(31 30 29 / 0.12); /* hairlines */
+  --line-strong: rgb(31 30 29 / 0.22); /* edges of inputs and buttons */
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --fg-3: #73726c;
+  --fg-4: #a3a199;
+  --primary: #141413; /* the main button: ink on paper */
+  --primary-hover: #3d3d3a;
+  --primary-fg: #faf9f5;
+  --accent: #c6613f;
+  --accent-hover: #ad5131;
+  --accent-fg: #ffffff;
+  --focus: #2c84db;
+  --ok: #2e7d50;
+  --warn: #96650a;
+  --bad: #b53333;
+  --info: #2c6fb7;
+  --sh-card: 0 1px 2px rgb(20 20 19 / 0.04);
+  --sh-pop: 0 16px 40px rgb(20 20 19 / 0.14), 0 2px 6px rgb(20 20 19 / 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #262624;
+    --sidebar: #1f1e1d;
+    --card: #30302e;
+    --field: #262624;
+    --sunken: #1f1e1d;
+    --line: rgb(222 220 209 / 0.14);
+    --line-strong: rgb(222 220 209 / 0.26);
+    --fg: #faf9f5;
+    --fg-2: #c2c0b6;
+    --fg-3: #9c9a92;
+    --fg-4: #6f6e68;
+    --primary: #faf9f5;
+    --primary-hover: #e3e1d7;
+    --primary-fg: #141413;
+    --accent: #d97757;
+    --accent-hover: #e38d70;
+    --accent-fg: #ffffff;
+    --focus: #5aa2ea;
+    --ok: #74c293;
+    --warn: #e2b25a;
+    --bad: #f08a85;
+    --info: #7ab1ec;
+    --sh-card: 0 1px 2px rgb(0 0 0 / 0.2);
+    --sh-pop: 0 16px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
   }
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #262624;
+  --sidebar: #1f1e1d;
+  --card: #30302e;
+  --field: #262624;
+  --sunken: #1f1e1d;
+  --line: rgb(222 220 209 / 0.14);
+  --line-strong: rgb(222 220 209 / 0.26);
+  --fg: #faf9f5;
+  --fg-2: #c2c0b6;
+  --fg-3: #9c9a92;
+  --fg-4: #6f6e68;
+  --primary: #faf9f5;
+  --primary-hover: #e3e1d7;
+  --primary-fg: #141413;
+  --accent: #d97757;
+  --accent-hover: #e38d70;
+  --accent-fg: #ffffff;
+  --focus: #5aa2ea;
+  --ok: #74c293;
+  --warn: #e2b25a;
+  --bad: #f08a85;
+  --info: #7ab1ec;
+  --sh-card: 0 1px 2px rgb(0 0 0 / 0.2);
+  --sh-pop: 0 16px 40px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-sidebar: var(--sidebar);
+  --color-card: var(--card);
+  --color-field: var(--field);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-focus: var(--focus);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-info: var(--info);
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-serif: var(--font-source-serif), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-mono: var(--font-geist-mono);
+  --radius-ctl: 0.625rem; /* fields and buttons */
+  --shadow-card: var(--sh-card);
+  --shadow-pop: var(--sh-pop);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--page);
+  color: var(--fg);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 @layer base {
+  /* Page titles are set in the serif face, at a light weight. */
+  h1 {
+    font-family: var(--font-source-serif), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  /* A visible ring for keyboard users on anything that is not a text field (those draw their own). */
+  a:focus-visible,
+  button:focus-visible,
+  summary:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* Thin, quiet scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+
   /* No up/down spin buttons on number fields. */
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
@@ -37,6 +168,16 @@ body {
     -moz-appearance: textfield;
     appearance: textfield;
   }
+}
+
+/* Selects get the same chevron on every platform. */
+.select-field {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%238a8880' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 1rem;
+  padding-right: 2.25rem;
 }
 
 /* iOS zooms the page when a focused field's text is under 16px. */

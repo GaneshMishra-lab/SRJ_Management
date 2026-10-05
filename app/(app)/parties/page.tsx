@@ -32,11 +32,11 @@ export default async function PartiesPage() {
         right={[2, 4]}
         empty="No parties yet."
         rows={rows.map((row) => [
-          <span key="n" className="font-medium text-zinc-200">{row.name}</span>,
+          <span key="n" className="font-medium text-fg">{row.name}</span>,
           <StatusBadge key="t" tone="zinc">{row.type}</StatusBadge>,
-          <span key="o" className={row.owesShop > 0 ? "text-emerald-400" : ""}>{inr(row.owesShop)}</span>,
+          <span key="o" className={row.owesShop > 0 ? "text-ok" : ""}>{inr(row.owesShop)}</span>,
           parts([["Sales", row.saleDue], ["Repairs", row.repairDue], ["Loans", row.loanDue], ["Gold loans", row.goldLoanPrincipalDue], ["Returns", row.supplierReturnDue]]),
-          <span key="s" className={row.shopOwes > 0 ? "text-red-400" : ""}>{inr(row.shopOwes)}</span>,
+          <span key="s" className={row.shopOwes > 0 ? "text-bad" : ""}>{inr(row.shopOwes)}</span>,
           parts([["Bills", row.billDue], ["Borrowed", row.lendDue], ["Old metal", row.oldItemDue]]),
         ])}
       />

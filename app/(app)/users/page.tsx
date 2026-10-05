@@ -3,7 +3,9 @@ import { db } from "@/db";
 import { users } from "@/db/schema/entities";
 import { setUserActive } from "@/app/actions/users";
 import { StaffForm } from "@/components/StaffForm";
+import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { requireOwner } from "@/lib/dal";
+import { btn, rowClass, tableWrapClass, tdClass, thClass } from "@/lib/styles";
 
 export default async function UsersPage() {
   const owner = await requireOwner();
@@ -21,47 +23,37 @@ export default async function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">Users</h1>
-        <p className="text-zinc-400 mt-1">Create staff logins and switch them on or off.</p>
-      </div>
+      <PageHeader title="Users" subtitle="Create staff logins and switch them on or off." />
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-6 backdrop-blur-sm">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">New staff login</h2>
+      <Card title="New staff login">
         <StaffForm />
-      </div>
+      </Card>
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 backdrop-blur-sm overflow-hidden">
+      <div className={tableWrapClass}>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="border-b border-zinc-800 bg-zinc-900/50 text-xs uppercase text-zinc-500">
+          <table className="w-full text-left text-sm text-fg-2">
+            <thead>
               <tr>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Name</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Username</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Role</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-center">Status</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Action</th>
+                <th className={thClass}>Name</th>
+                <th className={thClass}>Username</th>
+                <th className={thClass}>Role</th>
+                <th className={thClass}>Status</th>
+                <th className={`${thClass} text-right`}>Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/50">
+            <tbody>
               {allUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-zinc-800/20 transition-colors">
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 font-medium text-zinc-200">{user.name}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4">{user.username}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 capitalize">{user.role}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">
-                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                      user.isActive
-                        ? "bg-emerald-500/10 text-emerald-500"
-                        : "bg-zinc-500/10 text-zinc-400"
-                    }`}>
-                      {user.isActive ? "Active" : "Disabled"}
-                    </span>
+                <tr key={user.id} className={rowClass}>
+                  <td className={`${tdClass} font-medium text-fg`}>{user.name}</td>
+                  <td className={tdClass}>{user.username}</td>
+                  <td className={`${tdClass} capitalize`}>{user.role}</td>
+                  <td className={tdClass}>
+                    <StatusBadge tone={user.isActive ? "ok" : "neutral"}>{user.isActive ? "Active" : "Disabled"}</StatusBadge>
                   </td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">
+                  <td className={`${tdClass} text-right`}>
                     {user.id !== owner.id && (
                       <form action={setUserActive.bind(null, user.id, !user.isActive)}>
-                        <button type="submit" className="text-sm font-medium text-amber-500 hover:text-amber-400">
+                        <button type="submit" className={btn("secondary", "sm")}>
                           {user.isActive ? "Disable" : "Enable"}
                         </button>
                       </form>

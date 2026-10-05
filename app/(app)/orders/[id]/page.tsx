@@ -55,15 +55,15 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       ]} />
 
       <Card title="Progress">
-        <ul className="space-y-2 text-sm text-zinc-300">
+        <ul className="space-y-2 text-sm text-fg-2">
           {pieces.length === 0 ? (
-            <li className="text-zinc-400">No piece has arrived yet. When the maker&apos;s bill comes in, pick this order on the piece in <Link href="/purchases/new" className={linkClass}>New Purchase</Link>.</li>
+            <li className="text-fg-2">No piece has arrived yet. When the maker&apos;s bill comes in, pick this order on the piece in <Link href="/purchases/new" className={linkClass}>New Purchase</Link>.</li>
           ) : pieces.map((piece) => (
             <li key={piece.id}>Arrived: <Link href={`/inventory/${piece.id}`} className={linkClass}>{piece.typeName ?? "Piece"} #{piece.label}</Link> · {grams(piece.netWeight)}</li>
           ))}
           {sale
             ? <li>Delivered on a <Link href={`/sales/${sale.id}`} className={linkClass}>sale bill</Link>, with the advance applied to it.</li>
-            : pieces.length > 0 && <li className="text-zinc-400">To deliver, start a <Link href="/sales/new" className={linkClass}>new sale</Link> and choose this order.</li>}
+            : pieces.length > 0 && <li className="text-fg-2">To deliver, start a <Link href="/sales/new" className={linkClass}>new sale</Link> and choose this order.</li>}
         </ul>
         {NEXT_STEP[order.status ?? ""] && (
           <div className="mt-4">
@@ -74,12 +74,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card title="Advances">
-          {payments.length === 0 ? <p className="text-sm text-zinc-500">No advance yet.</p> : (
-            <ul className="divide-y divide-zinc-800/50 text-sm">
+          {payments.length === 0 ? <p className="text-sm text-fg-3">No advance yet.</p> : (
+            <ul className="divide-y divide-line text-sm">
               {payments.map((payment) => (
                 <li key={payment.id} className="flex justify-between py-2">
-                  <span className="text-zinc-400">{dateTime(payment.date)} · {payment.mode?.replace("_", " ")}</span>
-                  <span className="text-zinc-200">{inr(payment.amt)}</span>
+                  <span className="text-fg-2">{dateTime(payment.date)} · {payment.mode?.replace("_", " ")}</span>
+                  <span className="text-fg">{inr(payment.amt)}</span>
                 </li>
               ))}
             </ul>

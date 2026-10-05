@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { createSale } from "@/app/actions/sales";
 import { GST_PCT, priceSaleLine, purityRate, round2 } from "@/lib/pricing";
 import { dateOnly, grams, inr } from "@/lib/format";
+import { Card, Field, Notice, SelectField, SummaryRow } from "@/components/ui";
+import { btn, iconButtonClass, linkClass } from "@/lib/styles";
 
 type Customer = { id: string; name: string | null };
 type Piece = {
@@ -27,9 +29,6 @@ type ReadyOrder = {
   advance: number;
   bookedRate: number | null;
 };
-
-const inputClass = "w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-2 focus:ring-amber-500/50 outline-none";
-const smallInputClass = "w-full rounded-lg bg-zinc-950 border-zinc-800 text-sm px-3 py-2 text-zinc-100 focus:ring-1 focus:ring-amber-500 outline-none";
 
 export function SaleForm({
   customers,
@@ -141,292 +140,227 @@ export function SaleForm({
     }
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      {date && (
-        <p className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-500">
-          This bill, and any payment or old metal on it, will be dated {dateOnly(date)}.
-        </p>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
-          <label htmlFor="customer" className="text-sm font-medium text-zinc-300">Customer</label>
-          <select id="customer" className={inputClass} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
-            <option value="">Select a customer...</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>{customer.name}</option>
-            ))}
-            <option value="new">+ Add New Customer</option>
-          </select>
-          {isNewCustomer && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                className={inputClass}
-                placeholder="Customer name"
-                aria-label="New customer name"
-                value={newCustomerName}
-                onChange={(e) => setNewCustomerName(e.target.value)}
-                autoFocus
-                required
-              />
-              <input
-                type="tel"
-                className={inputClass}
-                placeholder="Contact number (optional)"
-                aria-label="New customer contact number"
-                value={newCustomerContact}
-                onChange={(e) => setNewCustomerContact(e.target.value)}
-              />
-            </div>
-          )}
-        </div>
+  const toPay = Math.max(0, round2(totalAmt - advance - oldGoldAmt));
 
-        {orders.length > 0 && (
-          <div className="space-y-2">
-            <label htmlFor="order" className="text-sm font-medium text-zinc-300">Delivering an order?</label>
-            <select id="order" className={inputClass} value={orderId} onChange={(e) => chooseOrder(e.target.value)}>
-              <option value="">No, a normal sale</option>
-              {orders.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} · {customers.find((c) => c.id === o.customerId)?.name ?? "customer"} · advance {inr(o.advance)}
-                </option>
-              ))}
-            </select>
-            {order?.bookedRate && (
-              <p className="text-xs text-amber-500">Rate was booked at {inr(order.bookedRate)} per gram fine; the order&apos;s piece is billed at that rate.</p>
-            )}
-          </div>
+  // The bill on the left; what it comes to stays in view on the right while the pieces are added.
+  return (
+    <form onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="space-y-6">
+        {date && (
+          <Notice tone="info">
+            This bill, and any payment or old metal on it, will be dated <strong className="font-semibold">{dateOnly(date)}</strong>.
+          </Notice>
         )}
 
-        <div className="space-y-2">
-          <label htmlFor="add-piece" className="text-sm font-medium text-zinc-300">Add a piece</label>
-          <select id="add-piece" className={inputClass} value="" onChange={(e) => addPiece(e.target.value)}>
+        <Card title="Customer">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <SelectField label="Customer" className={orders.length === 0 && !isNewCustomer ? "sm:col-span-2" : ""} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+              <option value="">Select a customer...</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>{customer.name}</option>
+              ))}
+              <option value="new">+ Add new customer</option>
+            </SelectField>
+
+            {orders.length > 0 && (
+              <SelectField
+                label="Delivering an order?"
+                value={orderId}
+                onChange={(e) => chooseOrder(e.target.value)}
+                hint={order?.bookedRate ? `Rate was booked at ${inr(order.bookedRate)} per gram fine; the order's piece is billed at that rate.` : undefined}
+              >
+                <option value="">No, a normal sale</option>
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} · {customers.find((c) => c.id === o.customerId)?.name ?? "customer"} · advance {inr(o.advance)}
+                  </option>
+                ))}
+              </SelectField>
+            )}
+
+            {isNewCustomer && (
+              <>
+                <Field
+                  label="New customer name"
+                  type="text"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  autoFocus
+                  required
+                />
+                <Field
+                  label="Contact number (optional)"
+                  type="tel"
+                  value={newCustomerContact}
+                  onChange={(e) => setNewCustomerContact(e.target.value)}
+                />
+              </>
+            )}
+          </div>
+        </Card>
+
+        <Card title="Pieces">
+          <SelectField label="Add a piece" value="" onChange={(e) => addPiece(e.target.value)}>
             <option value="">{available.length === 0 ? "No more pieces available" : "Select a piece..."}</option>
             {available.map((piece) => (
               <option key={piece.id} value={piece.id}>
                 {pieceName(piece)} · {piece.metal} · {grams(piece.netWeight)}{piece.status === "on_approval" ? " · on approval" : ""}
               </option>
             ))}
-          </select>
-        </div>
-      </div>
+          </SelectField>
 
-      <div className="space-y-4">
-        <h3 className="text-lg font-medium text-zinc-200">Pieces</h3>
-        {priced.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            No pieces added yet.
-          </p>
-        ) : (
-          priced.map((line, index) => {
-            const piece = pieceById.get(line.stockId)!;
-            return (
-              <div key={line.stockId} className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="font-medium text-zinc-100">
-                    {pieceName(piece)}
-                    <span className="ml-2 text-sm font-normal text-zinc-400">
-                      {piece.metal} · {grams(piece.netWeight)} · {piece.melting ?? 0}% melting
-                    </span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setLines(lines.filter((_, i) => i !== index))}
-                    aria-label={`Remove ${pieceName(piece)}`}
-                    className="text-zinc-500 hover:text-red-400"
-                  >
-                    <Trash2 className="h-5 w-5" />
-                  </button>
+          {priced.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-dashed border-line-strong px-4 py-8 text-center text-sm text-fg-3">No pieces on this bill yet.</p>
+          ) : (
+            <div className="mt-2 divide-y divide-line">
+              {priced.map((line, index) => {
+                const piece = pieceById.get(line.stockId)!;
+                return (
+                  <div key={line.stockId} className="space-y-3 py-5 last:pb-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-fg">{pieceName(piece)}</p>
+                        <p className="text-[13px] text-fg-3">{piece.metal} · {grams(piece.netWeight)} · {piece.melting ?? 0}% melting</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-serif text-lg font-medium text-fg tabular-nums">{inr(line.amt)}</p>
+                        <button
+                          type="button"
+                          onClick={() => setLines(lines.filter((_, i) => i !== index))}
+                          aria-label={`Remove ${pieceName(piece)}`}
+                          title="Remove"
+                          className={`-my-1 ${iconButtonClass} hover:text-bad`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <Field
+                        label="Rate (₹/g at this purity)"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={line.rate || ""}
+                        onChange={(e) => updateLine(index, "rate", Number(e.target.value))}
+                        required
+                      />
+                      <Field
+                        label="Making % (with wastage)"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={line.makingPct || ""}
+                        onChange={(e) => updateLine(index, "makingPct", Number(e.target.value))}
+                        placeholder="e.g. 12"
+                      />
+                    </div>
+                    <p className="text-[13px] text-fg-3 tabular-nums">
+                      Metal {inr(line.metalValue)} · Making {inr(line.makingAmt)} · GST {GST_PCT}% {inr(line.gst)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        <Card
+          title="Old metal in exchange"
+          hint={oldGold.length === 0 ? "Add old metal the customer is giving against this bill." : undefined}
+          action={
+            <button type="button" onClick={() => setOldGold([...oldGold, { metal: "Gold", weight: 0, melting: 0, amt: 0 }])} className={btn("secondary", "sm")}>
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add old item
+            </button>
+          }
+          flush={oldGold.length === 0}
+        >
+          {oldGold.length === 0 ? <div className="pb-1" /> : (
+            <div className="divide-y divide-line">
+              {oldGold.map((old, index) => (
+                <div key={index} className="grid grid-cols-2 items-end gap-4 py-5 first:pt-0 last:pb-0 md:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+                  <SelectField label="Metal" value={old.metal} onChange={(e) => updateOldGold(index, "metal", e.target.value)}>
+                    <option value="Gold">Gold</option>
+                    <option value="Silver">Silver</option>
+                    <option value="Phuli">Phuli</option>
+                  </SelectField>
+                  <Field label="Weight (g)" type="number" step="0.001" min="0.001" value={old.weight || ""} onChange={(e) => updateOldGold(index, "weight", Number(e.target.value))} required />
+                  <Field label="Melting (%)" type="number" step="0.001" min="0.001" max="100" value={old.melting || ""} onChange={(e) => updateOldGold(index, "melting", Number(e.target.value))} required />
+                  <Field label="Agreed value (₹)" type="number" step="0.01" min="0.01" value={old.amt || ""} onChange={(e) => updateOldGold(index, "amt", Number(e.target.value))} placeholder={String(suggestOldValue(old) || "")} required />
+                  <div className="col-span-2 flex h-10 items-center justify-between gap-3 md:col-span-1">
+                    <button type="button" onClick={() => updateOldGold(index, "amt", suggestOldValue(old))} className={`text-[13px] ${linkClass}`}>
+                      Use {inr(suggestOldValue(old))}
+                    </button>
+                    <button type="button" onClick={() => setOldGold(oldGold.filter((_, i) => i !== index))} aria-label="Remove old item" title="Remove" className={`${iconButtonClass} hover:text-bad`}>
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-zinc-400">Rate (₹/g at this purity)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      className={smallInputClass}
-                      value={line.rate || ""}
-                      onChange={(e) => updateLine(index, "rate", Number(e.target.value))}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-zinc-400">Making % (with wastage)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className={smallInputClass}
-                      value={line.makingPct || ""}
-                      onChange={(e) => updateLine(index, "makingPct", Number(e.target.value))}
-                      placeholder="e.g. 12"
-                    />
-                  </div>
-                  <div className="text-sm text-zinc-400">
-                    <p>Metal: {inr(line.metalValue)}</p>
-                    <p>Making: {inr(line.makingAmt)}</p>
-                    <p>GST {GST_PCT}%: {inr(line.gst)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-zinc-500">Amount</p>
-                    <p className="text-lg font-semibold text-zinc-100">{inr(line.amt)}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
 
-      <div className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="text-lg font-medium text-zinc-200">Old metal in exchange</h3>
-          <button
-            type="button"
-            onClick={() => setOldGold([...oldGold, { metal: "Gold", weight: 0, melting: 0, amt: 0 }])}
-            className="text-sm text-amber-500 hover:text-amber-400"
-          >
-            + Add old item
-          </button>
-        </div>
-        {oldGold.map((old, index) => (
-          <div key={index} className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-400">Metal</label>
-              <select className={smallInputClass} value={old.metal} onChange={(e) => updateOldGold(index, "metal", e.target.value)}>
-                <option value="Gold">Gold</option>
-                <option value="Silver">Silver</option>
-                <option value="Phuli">Phuli</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-400">Weight (g)</label>
-              <input type="number" step="0.001" min="0.001" className={smallInputClass} value={old.weight || ""} onChange={(e) => updateOldGold(index, "weight", Number(e.target.value))} required />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-400">Melting (%)</label>
-              <input type="number" step="0.001" min="0.001" max="100" className={smallInputClass} value={old.melting || ""} onChange={(e) => updateOldGold(index, "melting", Number(e.target.value))} required />
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-zinc-400">Agreed value (₹)</label>
-              <input type="number" step="0.01" min="0.01" className={smallInputClass} value={old.amt || ""} onChange={(e) => updateOldGold(index, "amt", Number(e.target.value))} placeholder={String(suggestOldValue(old) || "")} required />
-            </div>
-            <div className="flex items-center justify-between gap-2 pb-2">
-              <button type="button" onClick={() => updateOldGold(index, "amt", suggestOldValue(old))} className="text-xs text-amber-500 hover:text-amber-400">
-                Use {inr(suggestOldValue(old))}
-              </button>
-              <button type="button" onClick={() => setOldGold(oldGold.filter((_, i) => i !== index))} aria-label="Remove old item" className="text-zinc-500 hover:text-red-400">
-                <Trash2 className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-zinc-800 pt-6">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="discount" className="text-sm font-medium text-zinc-300">Discount (₹)</label>
-            <input
-              id="discount"
+      <aside className="lg:sticky lg:top-24">
+        <Card title="Payment">
+          <div className="space-y-4">
+            <Field
+              label="Discount (₹)"
               type="number"
               step="0.01"
               min="0"
               max={computedAmt}
-              className={inputClass}
               value={discount || ""}
               onChange={(e) => setDiscount(Number(e.target.value))}
             />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="paid" className="text-sm font-medium text-zinc-300">Amount Paid Now</label>
-            <input
-              id="paid"
+            <Field
+              label="Amount paid now (₹)"
               type="number"
               step="0.01"
               min="0"
-              max={Math.max(0, round2(totalAmt - advance - oldGoldAmt))}
-              className={inputClass}
+              max={toPay}
               value={paidAmt || ""}
               onChange={(e) => setPaidAmt(Number(e.target.value))}
             />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="mode" className="text-sm font-medium text-zinc-300">Payment Mode</label>
-            <select id="mode" className={inputClass} value={mode} onChange={(e) => setMode(e.target.value)}>
+            <SelectField label="Payment mode" value={mode} onChange={(e) => setMode(e.target.value)}>
               <option value="cash">Cash (Vault)</option>
               <option value="online">Online (Bank)</option>
-            </select>
-          </div>
-          {date && (
-            <div className="space-y-2">
-              <label htmlFor="payment-date" className="text-sm font-medium text-zinc-300">
-                Payment entered on <span className="text-zinc-500 font-normal">(bill date if left empty)</span>
-              </label>
-              <input id="payment-date" type="date" min={date} className={inputClass} value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-              <p className="text-xs text-zinc-500">
-                When this bill replaces a cancelled one, choose the day of the correction, so the cash book of earlier days stays as it was.
-              </p>
-            </div>
-          )}
-        </div>
+            </SelectField>
+            {date && (
+              <Field
+                label="Payment entered on"
+                type="date"
+                min={date}
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                hint="Leave empty to use the bill date. When this bill replaces a cancelled one, choose the day of the correction, so earlier days stay as they were counted."
+              />
+            )}
 
-        <div className="rounded-2xl bg-amber-500/10 p-4 sm:p-6 flex flex-col justify-center border border-amber-500/20 space-y-2">
-          <div className="flex justify-between text-zinc-400">
-            <span>Computed amount:</span>
-            <span>{inr(computedAmt)}</span>
-          </div>
-          <div className="flex justify-between text-zinc-400">
-            <span>Discount:</span>
-            <span>- {inr(discount)}</span>
-          </div>
-          <div className="border-t border-amber-500/20 pt-2 flex justify-between gap-3 text-lg sm:text-xl font-bold text-amber-500">
-            <span>Bill Total:</span>
-            <span>{inr(totalAmt)}</span>
-          </div>
-          {advance > 0 && (
-            <div className="flex justify-between text-zinc-300 text-sm pt-2">
-              <span>Order advance:</span>
-              <span className="text-emerald-400">{inr(advance)}</span>
-            </div>
-          )}
-          {oldGoldAmt > 0 && (
-            <div className="flex justify-between text-zinc-300 text-sm pt-2">
-              <span>Old metal:</span>
-              <span className="text-emerald-400">{inr(oldGoldAmt)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-zinc-300 text-sm pt-2">
-            <span>Paid now:</span>
-            <span className="text-emerald-400">{inr(paidAmt)}</span>
-          </div>
-          <div className="flex justify-between text-zinc-300 text-sm font-semibold">
-            <span>Balance Due:</span>
-            <span className="text-red-400">{inr(Math.max(0, balanceDue))}</span>
-          </div>
-        </div>
-      </div>
+            <dl className="space-y-2 pt-1">
+              <SummaryRow label="Computed amount" value={inr(computedAmt)} />
+              <SummaryRow label="Discount" value={`− ${inr(discount)}`} />
+              <SummaryRow label="Bill total" value={inr(totalAmt)} strong />
+              {advance > 0 && <SummaryRow label="Order advance" value={inr(advance)} tone="ok" />}
+              {oldGoldAmt > 0 && <SummaryRow label="Old metal" value={inr(oldGoldAmt)} tone="ok" />}
+              <SummaryRow label="Paid now" value={inr(paidAmt)} tone="ok" />
+              <SummaryRow label="Balance due" value={inr(Math.max(0, balanceDue))} tone={balanceDue > 0 ? "accent" : undefined} />
+            </dl>
 
-      {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+            {error && <p role="alert" className="text-sm text-bad">{error}</p>}
 
-      <div className="flex justify-end pt-4 border-t border-zinc-800">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="px-6 py-2.5 text-sm font-medium text-zinc-400 hover:text-zinc-100 transition-colors mr-4"
-        >
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-8 py-2.5 rounded-xl bg-amber-500 text-zinc-950 text-sm font-semibold hover:bg-amber-400 disabled:opacity-50 transition-all shadow-lg shadow-amber-500/20"
-        >
-          {loading ? "Saving..." : "Save Sale"}
-        </button>
-      </div>
+            <div className="flex flex-col gap-2 pt-1">
+              <button type="submit" disabled={loading} className={btn()}>
+                {loading ? "Saving..." : "Save sale"}
+              </button>
+              <button type="button" onClick={() => router.back()} className={btn("ghost")}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Card>
+      </aside>
     </form>
   );
 }

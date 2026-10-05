@@ -50,7 +50,7 @@ export default async function OrdersPage() {
         empty="No orders yet."
         rows={orders.map(({ order, customerName }) => [
           <Link key="d" href={`/orders/${order.id}`} className={linkClass}>{dateOnly(order.date)}</Link>,
-          <span key="c" className="font-medium text-zinc-200">{customerName ?? "Unknown"}</span>,
+          <span key="c" className="font-medium text-fg">{customerName ?? "Unknown"}</span>,
           `${order.name} (${order.metal})`,
           grams(order.weight),
           inr(order.amt),

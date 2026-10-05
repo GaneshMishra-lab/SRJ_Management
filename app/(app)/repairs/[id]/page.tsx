@@ -49,18 +49,18 @@ export default async function RepairPage({ params }: { params: Promise<{ id: str
       ]} />
 
       <Card title="Life cycle">
-        <ul className="space-y-2 text-sm text-zinc-300">
+        <ul className="space-y-2 text-sm text-fg-2">
           <li>{dateTime(repair.receivedDate)} · taken in at {grams(repair.receivedWeight)}</li>
           {repair.sentDate && <li>{dateTime(repair.sentDate)} · sent to {row.karigarName ?? "karigar"}</li>}
           {repair.doneDate && <li>{dateTime(repair.doneDate)} · repaired, charge {inr(repair.amt)}</li>}
           {repair.returnedDate && (
             <li>
               {dateTime(repair.returnedDate)} · returned to customer at {grams(repair.returnedWeight)}
-              {weightDiff !== null && weightDiff !== 0 && <span className="text-amber-500"> ({weightDiff > 0 ? "+" : ""}{weightDiff.toFixed(3)} g against received)</span>}
+              {weightDiff !== null && weightDiff !== 0 && <span className="text-accent"> ({weightDiff > 0 ? "+" : ""}{weightDiff.toFixed(3)} g against received)</span>}
             </li>
           )}
           {payments.map((payment) => (
-            <li key={payment.id} className="text-zinc-400">{dateTime(payment.date)} · received {inr(payment.amt)} by {payment.mode}</li>
+            <li key={payment.id} className="text-fg-2">{dateTime(payment.date)} · received {inr(payment.amt)} by {payment.mode}</li>
           ))}
         </ul>
       </Card>

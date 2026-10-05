@@ -1,26 +1,27 @@
 import Link from "next/link";
-import {
-  Wallet,
-  Landmark,
-  Scale,
-  TrendingUp,
-} from "lucide-react";
 import { and, desc, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { cashLedger } from "@/db/schema/ledger";
 import { itemSaleBill, itemStock } from "@/db/schema/sales";
 import { setDailyRates } from "@/app/actions/ledger";
 import { ActionForm } from "@/components/ActionForm";
-import { DateField } from "@/components/ui";
+import { Card, DateField, Empty, PageHeader, Stats } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { dateOnly, dateTime, grams, inr, istDate, istDayRange } from "@/lib/format";
 import { cashBalances, getCurrentRates } from "@/lib/ledger";
-import { inputClass, labelClass } from "@/lib/styles";
+import { btn, hintClass, inputClass, labelClass, linkClass } from "@/lib/styles";
+
+// "Good morning" by the shop's clock, not the server's.
+function greeting() {
+  const hour = new Date(Date.now() + 5.5 * 60 * 60 * 1000).getUTCHours();
+  return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+}
 
 export default async function Dashboard() {
-  await getCurrentUser();
+  const user = await getCurrentUser();
 
-  const { start, end } = istDayRange(istDate());
+  const today = istDate();
+  const { start, end } = istDayRange(today);
   const balances = await cashBalances();
   const rates = await getCurrentRates();
 
@@ -46,104 +47,53 @@ export default async function Dashboard() {
 
   const recent = await db.select().from(cashLedger).orderBy(desc(cashLedger.date), desc(cashLedger.createdAt)).limit(8);
 
-  const stats = [
-    {
-      name: "Cash in Vault",
-      value: inr(balances.vault),
-      note: "By the cash ledger",
-      icon: Wallet,
-      color: "text-emerald-500",
-      bg: "bg-emerald-500/10",
-    },
-    {
-      name: "Bank Balance",
-      value: inr(balances.account),
-      note: "By the cash ledger",
-      icon: Landmark,
-      color: "text-blue-500",
-      bg: "bg-blue-500/10",
-    },
-    {
-      name: "Gold Stock",
-      value: grams(gold?.weight),
-      note: `${gold?.pieces ?? 0} gold pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}`,
-      icon: Scale,
-      color: "text-amber-500",
-      bg: "bg-amber-500/10",
-    },
-    {
-      name: "Today's Sales",
-      value: inr(todaySales?.total),
-      note: `${todaySales?.bills ?? 0} bills`,
-      icon: TrendingUp,
-      color: "text-purple-500",
-      bg: "bg-purple-500/10",
-    },
-  ];
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">Dashboard</h1>
-        <p className="text-zinc-400 mt-1">Overview of your jewelry business performance.</p>
-      </div>
+      <PageHeader title={`${greeting()}, ${user.name.split(/\s+/)[0]}`} subtitle={`${dateOnly(today)} · where the shop stands right now`}>
+        <Link href="/purchases/new" className={btn("secondary")}>New purchase</Link>
+        <Link href="/sales/new" className={btn()}>New sale</Link>
+      </PageHeader>
 
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <div
-            key={stat.name}
-            className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 sm:p-6 shadow-sm backdrop-blur-sm transition-all hover:bg-zinc-900/50"
-          >
-            <div className={`inline-flex p-3 rounded-xl ${stat.bg}`}>
-              <stat.icon className={`h-6 w-6 ${stat.color}`} />
-            </div>
-            <div className="mt-4">
-              <h3 className="text-sm font-medium text-zinc-400">{stat.name}</h3>
-              <p className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-zinc-100">
-                {stat.value}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">{stat.note}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Stats items={[
+        { name: "Cash in vault", value: inr(balances.vault), note: "By the cash ledger" },
+        { name: "Bank balance", value: inr(balances.account), note: "By the cash ledger" },
+        { name: "Gold in stock", value: grams(gold?.weight), note: `${gold?.pieces ?? 0} pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}` },
+        { name: "Today's sales", value: inr(todaySales?.total), note: `${todaySales?.bills ?? 0} ${todaySales?.bills === 1 ? "bill" : "bills"}` },
+      ]} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-zinc-100">Recent Transactions</h2>
-            <Link href="/ledgers" className="text-sm text-amber-500 hover:text-amber-400">Cash ledger</Link>
-          </div>
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
+        <Card
+          title="Recent transactions"
+          action={<Link href="/ledgers" className={`text-sm ${linkClass}`}>Cash ledger</Link>}
+          flush
+          className="lg:col-span-3"
+        >
           {recent.length === 0 ? (
-            <div className="text-center text-zinc-500 py-10">
-              No recent transactions.
-            </div>
+            <Empty>No money has moved yet.</Empty>
           ) : (
-            <ul className="divide-y divide-zinc-800/50 text-sm">
+            <ul>
               {recent.map((entry) => (
-                <li key={entry.id} className="flex items-center justify-between gap-4 py-3">
+                <li key={entry.id} className="flex items-center justify-between gap-4 border-t border-line px-5 py-3">
                   <div className="min-w-0">
-                    <p className="truncate text-zinc-200">{entry.desc}</p>
-                    <p className="text-xs text-zinc-500">{dateTime(entry.date)} · {entry.location === "vault" ? "Vault" : "Bank"}</p>
+                    <p className="truncate text-sm text-fg">{entry.desc}</p>
+                    <p className="text-[13px] text-fg-3">{dateTime(entry.date)} · {entry.location === "vault" ? "Vault" : "Bank"}</p>
                   </div>
-                  <span className={`whitespace-nowrap font-medium ${entry.direction === "in" ? "text-emerald-400" : "text-red-400"}`}>
-                    {entry.direction === "in" ? "+" : "-"} {inr(entry.amt)}
+                  <span className={`shrink-0 text-sm tabular-nums ${entry.direction === "in" ? "text-ok" : "text-fg"}`}>
+                    {entry.direction === "in" ? "+" : "−"} {inr(entry.amt)}
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
 
-        <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4 sm:p-6">
-          <h2 className="text-lg font-semibold text-zinc-100 mb-1">Today&apos;s Rates</h2>
-          <p className="text-sm text-zinc-500 mb-4">Per gram of fine metal. Until today&apos;s is entered, the last rate applies.</p>
+        <Card title="Today's rates" hint="Per gram of fine metal. Until today's is entered, the last rate applies." className="lg:col-span-2">
           <ActionForm action={setDailyRates} submitLabel="Save rates">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               {(["Gold", "Silver"] as const).map((metal) => {
                 const rate = rates[metal];
                 return (
-                  <div key={metal} className="space-y-2">
+                  <div key={metal} className="space-y-1.5">
                     <label htmlFor={`rate-${metal}`} className={labelClass}>{metal} (₹/g)</label>
                     <input
                       id={`rate-${metal}`}
@@ -154,16 +104,16 @@ export default async function Dashboard() {
                       defaultValue={rate?.isToday ? rate.rate : undefined}
                       className={inputClass}
                     />
-                    <p className={`text-xs ${rate?.isToday ? "text-emerald-400" : "text-amber-500"}`}>
+                    <p className={rate?.isToday ? "text-[13px] text-ok" : hintClass}>
                       {!rate ? "Never entered" : rate.isToday ? "Entered today" : `Using ${inr(rate.rate)} from ${dateOnly(rate.date)}`}
                     </p>
                   </div>
                 );
               })}
             </div>
-            <DateField label="For a missed day, pick its date (today if left empty)" />
+            <DateField label="For a missed day, pick its date" className="" />
           </ActionForm>
-        </div>
+        </Card>
       </div>
     </div>
   );

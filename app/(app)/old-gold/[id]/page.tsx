@@ -48,13 +48,13 @@ export default async function OldItemPage({ params }: { params: Promise<{ id: st
       ]} />
 
       <Card title="Where it came from and went">
-        <ul className="space-y-2 text-sm text-zinc-300">
+        <ul className="space-y-2 text-sm text-fg-2">
           {item.saleBill && <li>Given in exchange on a <Link href={`/sales/${item.saleBill}`} className={linkClass}>sale bill</Link>; its value was set against that bill.</li>}
           {item.order && <li>Given as advance on an <Link href={`/orders/${item.order}`} className={linkClass}>order</Link>.</li>}
           {item.goldLoan && <li>Taken over from a defaulted <Link href={`/gold-loans/${item.goldLoan}`} className={linkClass}>gold loan</Link>.</li>}
           {!item.saleBill && !item.order && !item.goldLoan && <li>Bought outright from the customer.</li>}
           {payments.map((payment) => (
-            <li key={payment.id} className="text-zinc-400">{dateTime(payment.date)} · paid {inr(payment.amt)} by {payment.mode}</li>
+            <li key={payment.id} className="text-fg-2">{dateTime(payment.date)} · paid {inr(payment.amt)} by {payment.mode}</li>
           ))}
           {item.status === "returned" && <li>Given back to the customer on {dateOnly(item.processedDate)}, when that sale bill was cancelled.</li>}
           {item.status === "melted" && <li>Melted into langdi on {dateOnly(item.processedDate)} (see <Link href="/metal" className={linkClass}>Metal &amp; Langdi</Link>).</li>}

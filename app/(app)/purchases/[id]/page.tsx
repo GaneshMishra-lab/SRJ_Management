@@ -5,13 +5,14 @@ import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { bill, billPayment, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
 import { addBillFinePayment, addBillLangdiPayment, addBillPayment } from "@/app/actions/purchases";
-import { DateField, Grams, Percent, SelectField } from "@/components/ui";
+import { RowLink } from "@/components/controls";
+import { Card, DateField, Field, ModeField, PageHeader, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateOnly, dateTime, grams, inr } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
-import { cardClass, inputClass, labelClass, stockStatus, tableWrapClass, theadClass } from "@/lib/styles";
+import { rowClass, stockStatus, tdClass, thClass } from "@/lib/styles";
 
 export default async function PurchaseBillPage({ params }: { params: Promise<{ id: string }> }) {
   await getCurrentUser();
@@ -53,136 +54,122 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/purchases" className="text-sm text-zinc-500 hover:text-zinc-300">← Purchases</Link>
-        <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">{purchase.supplierName ?? "Unknown supplier"}</h1>
-        <p className="text-zinc-400 mt-1">
-          {b.metal} bill of {dateOnly(b.date)} · standard {b.standard ?? "not recorded"} · rate {inr(b.rate)} per g fine
-        </p>
-      </div>
+      <PageHeader
+        back={{ href: "/purchases", label: "Purchases" }}
+        title={<>{purchase.supplierName ?? "Unknown supplier"}<StatusBadge tone={due > 0 ? "warn" : "ok"}>{due > 0 ? "Pending" : "Paid"}</StatusBadge></>}
+        subtitle={`${b.metal} bill of ${dateOnly(b.date)} · standard ${b.standard ?? "not recorded"} · rate ${inr(b.rate)} per gram fine`}
+      />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { name: "Bill amount", value: inr(b.billAmt) },
-          { name: "Paid", value: inr(b.paidAmt) },
-          { name: "Balance due", value: inr(due) },
-          { name: "Due in fine", value: grams(fineDue) },
-        ].map((stat) => (
-          <div key={stat.name} className={cardClass}>
-            <p className="text-sm text-zinc-400">{stat.name}</p>
-            <p className="mt-1 text-2xl font-semibold text-zinc-100">{stat.value}</p>
-          </div>
-        ))}
-      </div>
+      <Stats items={[
+        { name: "Bill amount", value: inr(b.billAmt) },
+        { name: "Paid", value: inr(b.paidAmt) },
+        { name: "Balance due", value: inr(due), tone: due > 0 ? "accent" : undefined },
+        { name: "Due in fine", value: grams(fineDue) },
+      ]} />
 
-      <div className={tableWrapClass}>
+      <Card title="Pieces" flush>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className={theadClass}>
+          <table className="w-full text-left text-sm text-fg-2">
+            <thead>
               <tr>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Piece</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Net wt</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Melting</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Wastage</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Making /g</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Extra</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-right">Amount</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium text-center">Now</th>
+                <th className={`${thClass} border-t`}>Piece</th>
+                <th className={`${thClass} border-t text-right`}>Net weight</th>
+                <th className={`${thClass} border-t text-right`}>Melting</th>
+                <th className={`${thClass} border-t text-right`}>Wastage</th>
+                <th className={`${thClass} border-t text-right`}>Making /g</th>
+                <th className={`${thClass} border-t text-right`}>Extra</th>
+                <th className={`${thClass} border-t text-right`}>Amount</th>
+                <th className={`${thClass} border-t`}>Now</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {items.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-800/20 transition-colors">
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 font-medium">
-                    {item.stockId ? (
-                      <Link href={`/inventory/${item.stockId}`} className="text-amber-500 hover:text-amber-400">
-                        {item.typeName ?? "Piece"} #{item.label ?? "-"}
-                      </Link>
-                    ) : "-"}
-                  </td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">{grams(item.netWeight)}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">{item.melting ?? 0}%</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">{item.wastage ?? 0}%</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">{inr(item.making)}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right">{inr(item.extraCharges)}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-right text-zinc-200">{inr(item.amt)}</td>
-                  <td className="px-4 py-3 sm:px-6 sm:py-4 text-center">{stockStatus[item.status ?? ""]?.label ?? "-"}</td>
-                </tr>
-              ))}
+            <tbody>
+              {items.map((item) => {
+                const cells = (
+                  <>
+                    <td className={tdClass}>
+                      {item.stockId
+                        ? <Link href={`/inventory/${item.stockId}`} className="font-medium text-fg">{item.typeName ?? "Piece"} #{item.label ?? "-"}</Link>
+                        : "-"}
+                    </td>
+                    <td className={`${tdClass} text-right tabular-nums`}>{grams(item.netWeight)}</td>
+                    <td className={`${tdClass} text-right tabular-nums`}>{item.melting ?? 0}%</td>
+                    <td className={`${tdClass} text-right tabular-nums`}>{item.wastage ?? 0}%</td>
+                    <td className={`${tdClass} text-right tabular-nums`}>{inr(item.making)}</td>
+                    <td className={`${tdClass} text-right tabular-nums`}>{inr(item.extraCharges)}</td>
+                    <td className={`${tdClass} text-right text-fg tabular-nums`}>{inr(item.amt)}</td>
+                    <td className={tdClass}>
+                      {stockStatus[item.status ?? ""]
+                        ? <StatusBadge tone={stockStatus[item.status ?? ""].tone}>{stockStatus[item.status ?? ""].label}</StatusBadge>
+                        : "-"}
+                    </td>
+                  </>
+                );
+                return item.stockId
+                  ? <RowLink key={item.id} href={`/inventory/${item.stockId}`} className={rowClass}>{cells}</RowLink>
+                  : <tr key={item.id} className={rowClass}>{cells}</tr>;
+              })}
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className={cardClass}>
-          <h2 className="text-lg font-semibold text-zinc-100 mb-4">Payments</h2>
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <Card title="Payments" flush>
           {payments.length === 0 ? (
-            <p className="text-sm text-zinc-500">No payments yet.</p>
+            <p className="px-5 pb-5 text-sm text-fg-3">No payments yet.</p>
           ) : (
-            <ul className="divide-y divide-zinc-800/50 text-sm">
+            <ul>
               {payments.map((payment) => (
-                <li key={payment.id} className="flex justify-between py-2">
-                  <span className="text-zinc-400">
-                    {dateTime(payment.date)} · {payment.mode?.replace("_", " ")}
-                    {payment.fineWeight ? ` · ${grams(payment.fineWeight)} fine (${payment.standard})` : ""}
-                  </span>
-                  <span className="text-zinc-200">{inr(payment.amt)}</span>
+                <li key={payment.id} className="flex items-center justify-between gap-4 border-t border-line px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-fg capitalize">
+                      {payment.mode?.replace("_", " ")}
+                      {payment.fineWeight ? <span className="normal-case text-fg-3"> · {grams(payment.fineWeight)} fine ({payment.standard})</span> : null}
+                    </p>
+                    <p className="text-[13px] text-fg-3">{dateTime(payment.date)}</p>
+                  </div>
+                  <span className="shrink-0 text-sm text-fg tabular-nums">{inr(payment.amt)}</span>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </Card>
 
         {due > 0 && (
-          <div className={cardClass}>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-4">Pay supplier</h2>
+          <Card title="Pay supplier">
             <ActionForm action={addBillPayment.bind(null, id)} submitLabel="Record payment">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label htmlFor="amt" className={labelClass}>Amount (₹)</label>
-                  <input id="amt" name="amt" type="number" step="0.01" min="0.01" max={due} className={inputClass} required />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="mode" className={labelClass}>Paid from</label>
-                  <select id="mode" name="mode" className={inputClass}>
-                    <option value="cash">Cash (Vault)</option>
-                    <option value="online">Online (Bank)</option>
-                  </select>
-                </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Amount (₹)" name="amt" type="number" step="0.01" min="0.01" max={due} required />
+                <ModeField label="Paid from" />
               </div>
               <DateField />
             </ActionForm>
-          </div>
+          </Card>
         )}
 
         {due > 0 && (
-          <div className={cardClass}>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1">Pay in fine</h2>
-            <p className="text-sm text-zinc-500 mb-4">Valued at this bill&apos;s rate and standard. Clears the bill at {grams(fineDue)}.</p>
+          <Card title="Pay in fine" hint={`Valued at this bill's rate and standard. Clears the bill at ${grams(fineDue)}.`}>
             <ActionForm action={addBillFinePayment.bind(null, id)} submitLabel="Record fine payment">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Grams label="Fine weight given (g)" name="weight" required />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Fine weight given (g)" name="weight" type="number" step="0.001" min="0.001" required />
                 <SelectField label="Standard given" name="standard" options={["995", "999"]} defaultValue={b.standard === "999" ? "999" : "995"} />
               </div>
               <DateField />
             </ActionForm>
-          </div>
+          </Card>
         )}
 
         {due > 0 && (
-          <div className={cardClass}>
-            <h2 className="text-lg font-semibold text-zinc-100 mb-1">Pay in langdi</h2>
-            <p className="text-sm text-zinc-500 mb-4">(weight − deduction) × tested purity, counted in this bill&apos;s standard.</p>
+          <Card title="Pay in langdi" hint="(weight − deduction) × tested purity, counted in this bill's standard.">
             <ActionForm action={addBillLangdiPayment.bind(null, id)} submitLabel="Record langdi payment">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Grams label="Langdi weight (g)" name="weight" required />
-                <Percent label="Tested purity (%)" name="testedPurity" required />
-                <Grams label="Deduction (g)" name="deduction" min="0" defaultValue="0" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Langdi weight (g)" name="weight" type="number" step="0.001" min="0.001" required />
+                <Field label="Tested purity (%)" name="testedPurity" type="number" step="0.001" min="0" max="100" required />
+                <Field label="Deduction (g)" name="deduction" type="number" step="0.001" min="0" defaultValue="0" />
               </div>
               <DateField />
             </ActionForm>
-          </div>
+          </Card>
         )}
       </div>
     </div>

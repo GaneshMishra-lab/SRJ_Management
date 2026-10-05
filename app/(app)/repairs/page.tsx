@@ -43,7 +43,7 @@ export default async function RepairsPage() {
         empty="No repairs yet."
         rows={repairs.map(({ repair, customerName }) => [
           <Link key="d" href={`/repairs/${repair.id}`} className={linkClass}>{dateOnly(repair.receivedDate)}</Link>,
-          <span key="c" className="font-medium text-zinc-200">{customerName ?? "Unknown"}</span>,
+          <span key="c" className="font-medium text-fg">{customerName ?? "Unknown"}</span>,
           repair.desc,
           grams(repair.receivedWeight),
           inr(repair.amt),

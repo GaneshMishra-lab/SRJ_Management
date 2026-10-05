@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, PackageOpen, ChevronDown, ChevronRight } from "lucide-react";
-import { stockStatus } from "@/lib/styles";
-import { dateOnly } from "@/lib/format";
+import { Plus, PackageOpen, ChevronRight } from "lucide-react";
+import { btn, labelClass, rowClass, stockStatus, tableWrapClass, tdClass, thClass } from "@/lib/styles";
+import { dateOnly, grams } from "@/lib/format";
 import { createItemType } from "@/app/actions/purchases";
+import { RowLink, Segmented } from "@/components/controls";
+import { Card, Empty, Field, PageHeader, StatusBadge } from "@/components/ui";
 
 type ItemType = { id: string; name: string; metal: string | null };
 type StockItem = {
@@ -27,6 +29,8 @@ export function InventoryManager({
   itemTypes: ItemType[];
   inventory: StockItem[];
 }) {
+  // Only one metal is listed at a time.
+  const [metal, setMetal] = useState<"Gold" | "Silver">("Gold");
   const [expandedTypeId, setExpandedTypeId] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newItemTypeName, setNewItemTypeName] = useState("");
@@ -50,156 +54,129 @@ export function InventoryManager({
   const getStockForType = (typeId: string) => {
     return inventory.filter((item) => item.itemTypeId === typeId);
   };
+  const shownTypes = itemTypes.filter((type) => type.metal === metal);
+  const pieces = (m: string) => inventory.filter((item) => item.metal === m).length;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">Inventory</h1>
-          <p className="text-zinc-400 mt-1">Manage item types and view current stock.</p>
-        </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-amber-400 transition-colors shadow-sm"
-        >
-          <Plus className="h-4 w-4" />
-          New Item Type
+      <PageHeader title="Inventory" subtitle="Pieces in the shop, by item type.">
+        <Segmented
+          label="Metal"
+          value={metal}
+          onChange={(next) => { setMetal(next); setExpandedTypeId(null); }}
+          options={[
+            { value: "Gold", label: `Gold · ${pieces("Gold")}` },
+            { value: "Silver", label: `Silver · ${pieces("Silver")}` },
+          ]}
+        />
+        <button type="button" onClick={() => { setNewItemTypeMetal(metal); setIsModalOpen(true); }} className={btn()}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          New item type
         </button>
-      </div>
+      </PageHeader>
 
-      <div className="space-y-4">
-        {itemTypes.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-10 text-center">
-             <div className="flex flex-col items-center justify-center space-y-3">
-              <div className="p-3 bg-zinc-900 rounded-full">
-                <PackageOpen className="h-8 w-8 text-zinc-500" />
-              </div>
-              <div className="text-zinc-400">No item types configured. Create one to get started.</div>
-            </div>
-          </div>
-        ) : (
-          itemTypes.map((type) => {
+      {shownTypes.length === 0 ? (
+        <Card>
+          <Empty icon={<PackageOpen className="h-5 w-5" />}>No {metal.toLowerCase()} item types yet. Create one to get started.</Empty>
+        </Card>
+      ) : (
+        <div className={tableWrapClass}>
+          {shownTypes.map((type) => {
             const typeStock = getStockForType(type.id);
             const isExpanded = expandedTypeId === type.id;
-            
+            const weight = typeStock.reduce((sum, item) => sum + (item.weight ?? 0), 0);
+
             return (
-              <div key={type.id} className="rounded-2xl border border-zinc-800 bg-zinc-950/50 backdrop-blur-sm overflow-hidden transition-all">
-                <button 
+              <div key={type.id} className="border-b border-line last:border-0">
+                <button
+                  type="button"
                   onClick={() => setExpandedTypeId(isExpanded ? null : type.id)}
-                  className="flex w-full items-center justify-between gap-3 p-4 sm:p-6 hover:bg-zinc-900/50 transition-colors"
+                  aria-expanded={isExpanded}
+                  className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-fg/3"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-lg ${type.metal === 'Gold' ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-300/10 text-slate-300'}`}>
-                      {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                    </div>
-                    <div className="text-left">
-                      <h3 className="text-lg font-semibold text-zinc-100">{type.name}</h3>
-                      <p className="text-sm text-zinc-400">Metal: {type.metal}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p className="text-sm text-zinc-400">Pieces</p>
-                      <p className="text-xl font-bold text-zinc-100">{typeStock.length}</p>
-                    </div>
-                  </div>
+                  <ChevronRight className={`h-4 w-4 shrink-0 text-fg-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-fg">{type.name}</span>
+                  <span className="text-sm text-fg-3 tabular-nums">{grams(weight)}</span>
+                  <span className="w-24 text-right text-sm text-fg-2 tabular-nums">{typeStock.length} {typeStock.length === 1 ? "piece" : "pieces"}</span>
                 </button>
-                
+
                 {isExpanded && (
-                  <div className="border-t border-zinc-800 bg-zinc-950 px-4 sm:px-6 py-4 overflow-x-auto">
+                  <div className="border-t border-line bg-page/70">
                     {typeStock.length === 0 ? (
-                      <p className="text-sm text-zinc-500 py-4 text-center">No items of this type in stock.</p>
+                      <p className="px-5 py-8 text-center text-sm text-fg-3">No pieces of this type in stock.</p>
                     ) : (
-                      <table className="w-full min-w-[32rem] text-left text-sm text-zinc-400">
-                        <thead className="text-xs uppercase text-zinc-500">
-                          <tr>
-                            <th className="py-3 pr-4 font-medium whitespace-nowrap">Label</th>
-                            <th className="py-3 pr-4 font-medium whitespace-nowrap">Date Added</th>
-                            <th className="py-3 font-medium text-center">Type</th>
-                            <th className="py-3 font-medium text-right">Weight (g)</th>
-                            <th className="py-3 font-medium text-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-800/50">
-                          {typeStock.map((item) => (
-                            <tr key={item.id} className="hover:bg-zinc-900/50">
-                              <td className="py-3 pr-4 font-medium whitespace-nowrap">
-                                <Link href={`/inventory/${item.id}`} className="text-amber-500 hover:text-amber-400">
-                                  #{item.label ?? "-"}
-                                </Link>
-                              </td>
-                              <td className="py-3 whitespace-nowrap">
-                                {dateOnly(item.date)}
-                              </td>
-                              <td className="py-3 text-center">
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase ${
-                                  item.isNew ? "bg-blue-500/10 text-blue-400" : "bg-purple-500/10 text-purple-400"
-                                }`}>
-                                  {item.isNew ? "New Stock" : "Refurbished"}
-                                </span>
-                              </td>
-                              <td className="py-3 text-right">{item.weight} g</td>
-                              <td className="py-3 text-center">
-                                <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ${stockStatus[item.status ?? ""]?.className ?? ""}`}>
-                                  {stockStatus[item.status ?? ""]?.label ?? item.status}
-                                </span>
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm text-fg-2">
+                          <thead>
+                            <tr>
+                              <th className={`${thClass} pl-12`}>Label</th>
+                              <th className={thClass}>Added</th>
+                              <th className={thClass}>Source</th>
+                              <th className={`${thClass} text-right`}>Weight</th>
+                              <th className={thClass}>Status</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {typeStock.map((item) => (
+                              <RowLink key={item.id} href={`/inventory/${item.id}`} className={rowClass}>
+                                <td className={`${tdClass} pl-12`}>
+                                  <Link href={`/inventory/${item.id}`} className="font-medium text-fg">#{item.label ?? "-"}</Link>
+                                </td>
+                                <td className={tdClass}>{dateOnly(item.date)}</td>
+                                <td className={tdClass}>{item.isNew ? "New stock" : "Refurbished"}</td>
+                                <td className={`${tdClass} text-right tabular-nums`}>{grams(item.weight)}</td>
+                                <td className={tdClass}>
+                                  <StatusBadge tone={stockStatus[item.status ?? ""]?.tone ?? "neutral"}>{stockStatus[item.status ?? ""]?.label ?? item.status}</StatusBadge>
+                                </td>
+                              </RowLink>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 )}
               </div>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
-      {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
-            <h2 className="text-xl font-bold text-zinc-100 mb-4">Create New Item Type</h2>
-            <form onSubmit={handleCreateType} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Type Name</label>
-                <input 
-                  type="text"
-                  className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-1 focus:ring-amber-500 outline-none"
-                  value={newItemTypeName}
-                  onChange={(e) => setNewItemTypeName(e.target.value)}
-                  placeholder="e.g. Gold Ring"
-                  required
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 backdrop-blur-[2px]"
+          onClick={(event) => event.target === event.currentTarget && setIsModalOpen(false)}
+          onKeyDown={(event) => event.key === "Escape" && setIsModalOpen(false)}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="new-type-title" className="w-full max-w-md rounded-2xl border border-line bg-card p-6 shadow-pop">
+            <h2 id="new-type-title" className="font-serif text-[1.375rem] font-medium text-fg">New item type</h2>
+            <p className="mt-1 text-[13px] text-fg-3">Pieces are grouped and labelled by their type.</p>
+            <form onSubmit={handleCreateType} className="mt-5 space-y-4">
+              <Field
+                label="Name"
+                type="text"
+                value={newItemTypeName}
+                onChange={(e) => setNewItemTypeName(e.target.value)}
+                placeholder="e.g. Ring"
+                autoFocus
+                required
+              />
+              <div className="space-y-1.5">
+                <span className={labelClass}>Metal</span>
+                <Segmented
+                  label="Metal"
+                  className="w-full"
+                  value={newItemTypeMetal}
+                  onChange={setNewItemTypeMetal}
+                  options={[{ value: "Gold", label: "Gold" }, { value: "Silver", label: "Silver" }]}
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Metal</label>
-                <select 
-                  className="w-full rounded-xl bg-zinc-900 border-zinc-800 text-zinc-100 px-4 py-2.5 focus:ring-1 focus:ring-amber-500 outline-none"
-                  value={newItemTypeMetal}
-                  onChange={(e) => setNewItemTypeMetal(e.target.value)}
-                >
-                  <option value="Gold">Gold</option>
-                  <option value="Silver">Silver</option>
-                </select>
-              </div>
-              
-              <div className="flex justify-end pt-4 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-100 transition-colors"
-                >
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsModalOpen(false)} className={btn("secondary")}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-6 py-2 rounded-xl bg-amber-500 text-zinc-950 text-sm font-semibold hover:bg-amber-400 disabled:opacity-50 transition-all"
-                >
-                  {loading ? "Saving..." : "Save Type"}
+                <button type="submit" disabled={loading} className={btn()}>
+                  {loading ? "Saving..." : "Create type"}
                 </button>
               </div>
             </form>

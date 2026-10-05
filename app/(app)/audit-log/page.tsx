@@ -1,7 +1,10 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { auditLog, users } from "@/db/schema/entities";
+import { Empty, PageHeader } from "@/components/ui";
 import { requireOwner } from "@/lib/dal";
+import { dateTime } from "@/lib/format";
+import { rowClass, tableWrapClass, tdClass, thClass } from "@/lib/styles";
 
 export default async function AuditLogPage() {
   await requireOwner();
@@ -23,41 +26,34 @@ export default async function AuditLogPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-100">Audit Log</h1>
-        <p className="text-zinc-400 mt-1">Who changed what, and when. Latest 200 entries.</p>
-      </div>
+      <PageHeader title="Audit Log" subtitle="Who changed what, and when. Latest 200 entries." />
 
-      <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 backdrop-blur-sm overflow-hidden">
+      <div className={tableWrapClass}>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="border-b border-zinc-800 bg-zinc-900/50 text-xs uppercase text-zinc-500">
+          <table className="w-full text-left text-sm text-fg-2">
+            <thead>
               <tr>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">When</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Who</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Action</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Table</th>
-                <th className="whitespace-nowrap px-4 py-3 sm:px-6 sm:py-4 font-medium">Details</th>
+                <th className={thClass}>When</th>
+                <th className={thClass}>Who</th>
+                <th className={thClass}>Action</th>
+                <th className={thClass}>Table</th>
+                <th className={thClass}>Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/50">
+            <tbody>
               {entries.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-10 sm:px-6 text-center text-zinc-500">
-                    Nothing recorded yet.
-                  </td>
-                </tr>
+                <tr><td colSpan={5}><Empty>Nothing recorded yet.</Empty></td></tr>
               ) : (
                 entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-zinc-800/20 transition-colors align-top">
-                    <td className="px-4 py-3 sm:px-6 sm:py-4 whitespace-nowrap">{entry.changedAt.toLocaleString()}</td>
-                    <td className="px-4 py-3 sm:px-6 sm:py-4 font-medium text-zinc-200">{entry.userName ?? "Unknown"}</td>
-                    <td className="px-4 py-3 sm:px-6 sm:py-4 capitalize">{entry.action}</td>
-                    <td className="px-4 py-3 sm:px-6 sm:py-4">{entry.tableName}</td>
-                    <td className="px-4 py-3 sm:px-6 sm:py-4">
+                  <tr key={entry.id} className={`${rowClass} align-top`}>
+                    <td className={tdClass}>{dateTime(entry.changedAt)}</td>
+                    <td className={`${tdClass} font-medium text-fg`}>{entry.userName ?? "Unknown"}</td>
+                    <td className={`${tdClass} capitalize`}>{entry.action}</td>
+                    <td className={`${tdClass} font-mono text-[13px]`}>{entry.tableName}</td>
+                    <td className="px-5 py-3">
                       <details>
-                        <summary className="cursor-pointer font-mono text-xs text-zinc-500">{entry.recordId}</summary>
-                        <pre className="mt-2 max-w-xl overflow-x-auto text-xs text-zinc-400">
+                        <summary className="cursor-pointer rounded font-mono text-xs text-fg-3 hover:text-fg">{entry.recordId}</summary>
+                        <pre className="mt-2 max-w-xl overflow-x-auto rounded-lg bg-sunken p-3 text-xs text-fg-2">
                           {JSON.stringify(entry.newValues, null, 2)}
                         </pre>
                       </details>
