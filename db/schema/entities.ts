@@ -1,14 +1,23 @@
-import { auditTimestamps, integer, pgTable, text, timestamp, uuid } from "./shared";
-import { boolean, check, jsonb, serial } from "drizzle-orm/pg-core";
+import { auditTimestamps, boolean, check, integer, pgTable, text, timestamp, uuid } from "./shared";
+import { jsonb, serial } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-export const entity = pgTable("entity", {
-  ...auditTimestamps(),
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name"),
-  type: text("type"),
-  contact: integer("contact"),
-});
+export const entity = pgTable(
+  "entity",
+  {
+    ...auditTimestamps(),
+    id: uuid("id").defaultRandom().primaryKey(),
+    name: text("name"),
+    type: text("type"),
+    contact: text("contact"),
+  },
+  (table) => ({
+    typeCheck: check(
+      "entity_type_check",
+      sql`${table.type} in ('customer', 'supplier', 'staff')`,
+    ),
+  }),
+);
 
 export const miscCategory = pgTable("misc_category", {
   ...auditTimestamps(),
@@ -33,13 +42,15 @@ export const users = pgTable(
     username: text("username").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     role: text("role").notNull(),
+    // Staff entity behind this login; empty for the owner.
+    entity: uuid("entity").references(() => entity.id),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
     roleCheck: check(
       "users_role_check",
-      sql`${table.role} in ('owner', 'staff', 'customer')`,
+      sql`${table.role} in ('owner', 'staff')`,
     ),
   }),
 );

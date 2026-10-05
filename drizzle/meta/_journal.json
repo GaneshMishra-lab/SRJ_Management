@@ -22,6 +22,20 @@
       "when": 1783155788815,
       "tag": "0002_solid_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791207980545,
+      "tag": "0003_spec_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791222910368,
+      "tag": "0004_sale_cancellation",
+      "breakpoints": true
     }
   ]
 }
