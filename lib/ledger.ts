@@ -1,8 +1,8 @@
 import "server-only";
-import { desc, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { cashLedger, dailyRate } from "@/db/schema/ledger";
-import { istDate } from "@/lib/format";
+import { istDate, parseDbDate } from "@/lib/format";
 
 export type CashMode = "cash" | "online";
 export type CashLocation = "vault" | "account";
@@ -30,6 +30,37 @@ export async function recordCash(
     date: entry.date ?? new Date().toISOString(),
   }).returning();
   return row;
+}
+
+type Corrector = Pick<typeof db, "update" | "delete">;
+const causedBy = (sourceTable: string, sourceId: string) => and(eq(cashLedger.sourceTable, sourceTable), eq(cashLedger.sourceId, sourceId));
+
+// The ledger entries a record caused: one, or the two legs of a bank transfer.
+export const cashCausedBy = (executor: Pick<typeof db, "select">, sourceTable: string, sourceId: string) =>
+  executor.select().from(cashLedger).where(causedBy(sourceTable, sourceId));
+
+// For the few records that are corrected in place rather than reversed (a line typed into the
+// day book, an expense, a bank transfer): the ledger entries they caused are rewritten, or
+// removed, along with them. Only what is given is rewritten.
+export async function rewriteCash(
+  executor: Corrector,
+  sourceTable: string,
+  sourceId: string,
+  entry: Partial<{ direction: "in" | "out"; amt: number; location: CashLocation; desc: string; date: string }>,
+) {
+  await executor.update(cashLedger).set({ ...entry, updatedAt: new Date() }).where(causedBy(sourceTable, sourceId));
+}
+
+export async function eraseCash(executor: Corrector, sourceTable: string, sourceId: string) {
+  return executor.delete(cashLedger).where(causedBy(sourceTable, sourceId)).returning();
+}
+
+// Whether a user may correct or remove an entry, given when it happened (and when it is being
+// moved to). Today's entries are anyone's to put right. An earlier day is the owner's alone:
+// every later day's opening cash follows from it.
+export function mayCorrect(role: string, ...dates: (string | null)[]) {
+  const today = istDate();
+  return role === "owner" || dates.every((date) => !date || istDate(parseDbDate(date)) >= today);
 }
 
 const signedAmt = sql<number>`coalesce(sum(case when ${cashLedger.direction} = 'in' then ${cashLedger.amt} else -${cashLedger.amt} end), 0)`.mapWith(Number);

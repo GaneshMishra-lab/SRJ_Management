@@ -1,37 +1,12 @@
 import { PageHeader } from "@/components/ui";
 import { PurchaseForm } from "@/components/PurchaseForm";
-import { db } from "@/db";
-import { entity } from "@/db/schema/entities";
-import { itemOrder, itemType } from "@/db/schema/sales";
-import { eq, inArray } from "drizzle-orm";
+import { purchaseFormData } from "@/lib/bill-forms";
 import { getCurrentUser } from "@/lib/dal";
 
 export default async function NewPurchasePage() {
   await getCurrentUser();
 
-  // Fetch suppliers to populate dropdown
-  const suppliers = await db
-    .select({
-      id: entity.id,
-      name: entity.name,
-    })
-    .from(entity)
-    .where(eq(entity.type, "supplier"));
-
-  const itemTypes = await db
-    .select({
-      id: itemType.id,
-      name: itemType.name,
-      metal: itemType.metal,
-    })
-    .from(itemType);
-
-  // Orders still waiting for their piece from the maker
-  const orders = await db
-    .select({ id: itemOrder.id, name: itemOrder.name, metal: itemOrder.metal, customerName: entity.name })
-    .from(itemOrder)
-    .leftJoin(entity, eq(itemOrder.customer, entity.id))
-    .where(inArray(itemOrder.status, ["order taken", "being made"]));
+  const { suppliers, itemTypes, orders } = await purchaseFormData();
 
   return (
     <div className="space-y-6">

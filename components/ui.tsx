@@ -106,10 +106,18 @@ export function Field({ label, hint, className = "", ...props }: { label: string
   );
 }
 
-// The day an entry really happened, for entries written up later. Read on the server with entryDate().
-// Kept to the width of a date, so it does not stretch across a wide form.
-export const DateField = ({ label = "Date (today if left empty)", className = "max-w-[17.5rem]" }: { label?: string; className?: string }) =>
-  <Field label={label} name="date" type="date" max={istDate()} className={className} />;
+// The day and time an entry really happened, for entries written up later. Read on the server with entryDate().
+// Kept narrow, so it does not stretch across a wide form. `time={false}` asks for the day alone.
+export const DateField = ({
+  label = "Date (today if left empty)",
+  className = "max-w-md",
+  time = true,
+}: { label?: string; className?: string; time?: boolean }) => (
+  <div className={`grid items-end gap-4 ${time ? "grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : ""} ${className}`}>
+    <Field label={label} name="date" type="date" max={istDate()} />
+    {time && <Field label="Time (now if left empty)" name="time" type="time" />}
+  </div>
+);
 
 export const Rupees = (props: { label: string; name: string } & React.ComponentProps<typeof Field>) =>
   <Field type="number" step="0.01" min="0.01" {...props} />;

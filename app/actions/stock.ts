@@ -17,6 +17,7 @@ import {
   supplierReturnSettlement,
 } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
+import { nextLabel } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2, round3 } from "@/lib/pricing";
@@ -39,6 +40,64 @@ async function moveStock(tx: Tx, stockId: string, from: string, to: string) {
   return piece;
 }
 
+// Labelling: a purchased item becomes a piece in the shop and gets its label number. The form starts from
+// what the bill said, but what is saved here is the shop's own record; the bill is left as it was.
+export async function addPurchasedToStock(itemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  const itemTypeId = text(formData, "itemType");
+  const grossWeight = round3(num(formData, "grossWeight"));
+  const netWeight = round3(num(formData, "netWeight")) || grossWeight;
+  const melting = round3(num(formData, "melting"));
+  const huid = text(formData, "huid");
+
+  if (!isUuid(itemId)) return { error: "Purchased item not found." };
+  if (!isUuid(itemTypeId)) return { error: "Choose an item type." };
+  if (grossWeight <= 0 || netWeight > grossWeight) return { error: "Enter the gross weight; net weight cannot be more than gross." };
+  if (melting <= 0 || melting > 100) return { error: "Melting must be between 0 and 100." };
+
+  let billId: string | undefined;
+  let orderId: string | undefined;
+  try {
+    const date = entryDate(formData);
+    await db.transaction(async (tx) => {
+      // Lock the purchased item so it cannot be labelled twice at once.
+      const [purchased] = await tx.select().from(itemPurchased).where(eq(itemPurchased.id, itemId)).for("update");
+      if (!purchased?.bill) throw new UserError("Purchased item not found.");
+      billId = purchased.bill;
+      orderId = purchased.order ?? undefined;
+
+      const [existing] = await tx.select({ id: itemStock.id }).from(itemStock).where(eq(itemStock.item, itemId));
+      if (existing) throw new UserError("This item is already in stock.");
+      if (huid) {
+        const [taken] = await tx.select({ id: itemStock.id }).from(itemStock).where(eq(itemStock.huid, huid));
+        if (taken) throw new UserError("Another piece already has this HUID.");
+      }
+
+      const [purchase] = await tx.select({ metal: bill.metal }).from(bill).where(eq(bill.id, purchased.bill));
+      const { label, metal } = await nextLabel(tx, itemTypeId);
+      if (metal !== purchase?.metal) throw new UserError(`Choose a ${purchase?.metal?.toLowerCase() ?? "matching"} item type; the bill is for ${purchase?.metal ?? "another metal"}.`);
+
+      const [piece] = await tx.insert(itemStock).values({
+        date,
+        itemType: itemTypeId, metal, grossWeight, netWeight, melting,
+        huid: huid || null, label, status: "stock", item: itemId,
+      }).returning();
+      await logAudit(tx, user.id, { tableName: "item_stock", recordId: piece.id, action: "insert", newValues: piece });
+    });
+  } catch (error) {
+    return fail(error, "Could not add the item to stock.");
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath("/inventory/label");
+  revalidatePath(`/inventory/label/${itemId}`);
+  revalidatePath("/purchases");
+  if (billId) revalidatePath(`/purchases/${billId}`);
+  if (orderId) revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/dashboard");
+  return { success: "Added to stock." };
+}
+
 export async function sendOnApproval(stockId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
   const entityId = text(formData, "entity");
@@ -50,7 +109,7 @@ export async function sendOnApproval(stockId: string, _prev: FormState, formData
   if (!newName && !isUuid(entityId)) return { error: "Choose who is taking the piece, or enter a new customer." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       let holder = entityId;
       if (newName) {
@@ -81,7 +140,7 @@ export async function returnFromApproval(stockId: string, _prev: FormState, form
   if (!isUuid(stockId)) return { error: "Piece not found." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       await moveStock(tx, stockId, "on_approval", "stock");
       const [approval] = await tx.update(itemApproval)
@@ -111,7 +170,7 @@ export async function returnToSupplier(stockId: string, _prev: FormState, formDa
   if (fine < 0) return { error: "Fine weight cannot be negative." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const piece = await moveStock(tx, stockId, "stock", "returned_to_supplier");
       if (!piece.item) throw new UserError("Only pieces bought from a supplier can be returned to one.");
@@ -152,7 +211,7 @@ export async function settleSupplierReturn(returnId: string, _prev: FormState, f
 
   let stockId: string | undefined;
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       // Lock the return so two settlements cannot both fit in the same balance.
       const [ret] = await tx.select().from(supplierReturn).where(eq(supplierReturn.id, returnId)).for("update");
@@ -188,6 +247,7 @@ export async function settleSupplierReturn(returnId: string, _prev: FormState, f
 
   if (stockId) revalidatePath(`/inventory/${stockId}`);
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
   return { success: "Settlement recorded." };
 }
@@ -203,7 +263,7 @@ export async function meltItem(stockId: string, _prev: FormState, formData: Form
   if (estPurity <= 0 || estPurity > 100) return { error: "Estimated purity must be between 0 and 100." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const piece = await moveStock(tx, stockId, "stock", "melted");
       const [entry] = await tx.insert(langdiLedger).values({
@@ -257,7 +317,7 @@ export async function settleSupplierReturnFine(returnId: string, _prev: FormStat
 
   let stockId: string | undefined;
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { ret, due } = await returnPosition(tx, returnId);
       stockId = ret.item;
@@ -297,7 +357,7 @@ export async function creditSupplierReturn(returnId: string, _prev: FormState, f
 
   let stockId: string | undefined;
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { ret, due } = await returnPosition(tx, returnId);
       stockId = ret.item;

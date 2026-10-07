@@ -22,6 +22,7 @@ import { priceSaleLine, purityRate, round2, round3 } from "@/lib/pricing";
 
 export type SalePayload = {
   date?: string; // the bill's own day (YYYY-MM-DD) when it is entered later; today if left out
+  time?: string; // the time on that day (HH:MM); the time now if left out
   customerId?: string;
   newCustomer?: { name: string; contact?: string };
   // Delivering an order: its piece must be on the bill and its advance is applied.
@@ -43,6 +44,7 @@ function revalidateSales() {
   revalidatePath("/orders");
   revalidatePath("/old-gold");
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -74,7 +76,7 @@ export async function createSale(payload: SalePayload) {
     }
     if (payload.orderId && !isUuid(payload.orderId)) throw new UserError("Order not found.");
     // The bill, old metal taken in and any payment made with it all carry the bill's own date.
-    const date = entryDate(payload.date);
+    const date = entryDate(payload.date, payload.time);
     const paidOn = payload.paymentDate ? entryDate(payload.paymentDate) : date;
     if (parseDbDate(paidOn) < parseDbDate(date)) throw new UserError("The payment date cannot be before the bill date.");
 
@@ -263,7 +265,7 @@ export async function addSalePayment(saleId: string, _prev: FormState, formData:
   if (!isCashMode(mode)) return { error: "Choose how the customer paid." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       // Only succeeds while the payment fits in what is still due.
       const [updated] = await tx.update(itemSaleBill)
@@ -312,7 +314,7 @@ export async function cancelSale(saleId: string, _prev: FormState, formData: For
   if (!reason) return { error: "Write the reason for cancelling this bill." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [saleBill] = await tx.select().from(itemSaleBill).where(eq(itemSaleBill.id, saleId)).for("update");
       if (!saleBill) throw new UserError("Sale bill not found.");

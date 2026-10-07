@@ -5,6 +5,7 @@ import { addExpense, adjustCash, closeDay, transferCash } from "@/app/actions/le
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DateField, Empty, Field, ModeField, Notice, PageHeader, Rupees, SelectField, Stats, SummaryRow } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
+import { EXPENSE_CATEGORIES } from "@/lib/expenses";
 import { dateOnly, dateTime, inr, istDate, istDayRange } from "@/lib/format";
 import { cashBalances, CashLocation } from "@/lib/ledger";
 import { round2 } from "@/lib/pricing";
@@ -14,7 +15,6 @@ const locations: { key: CashLocation; name: string }[] = [
   { key: "vault", name: "Cash in Vault" },
   { key: "account", name: "Bank Account" },
 ];
-const expenseCategories = ["Rent", "Salary", "Electricity", "Tea", "Transport", "Misc"];
 
 export default async function LedgersPage({
   searchParams,
@@ -59,7 +59,7 @@ export default async function LedgersPage({
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
         <Card title="Add expense">
           <ActionForm action={addExpense} submitLabel="Record expense">
-            <SelectField label="Category" name="category" options={expenseCategories} />
+            <SelectField label="Category" name="category" options={EXPENSE_CATEGORIES} />
             <Field label="Description (optional)" name="desc" type="text" />
             <Rupees label="Amount (₹)" name="amt" required />
             <ModeField label="Paid from" />

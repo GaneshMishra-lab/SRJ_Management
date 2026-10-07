@@ -1,14 +1,16 @@
 "use server";
 
 import { db } from "@/db";
-import { bill, itemOrder, itemPurchased, itemStock, itemType, billPayment, langdiLedger } from "@/db/schema/sales";
+import { bill, itemOrder, itemPurchased, itemType, billPayment, langdiLedger } from "@/db/schema/sales";
 import { entity } from "@/db/schema/entities";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { convertStandard, Standard } from "@/lib/standards";
-import { nextLabel, Tx } from "@/lib/entities";
+import { Tx } from "@/lib/entities";
 import { isBullionStandard, isStandard, langdiToFine, recordMetal } from "@/lib/metal";
 import { getCurrentUser, logAudit } from "@/lib/dal";
+import { parseDue } from "@/lib/due";
+import { parseDbDate } from "@/lib/format";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2, round3 } from "@/lib/pricing";
@@ -53,6 +55,7 @@ export async function createItemType(name: string, metal: string) {
 // Type definitions for the payload
 export type PurchasePayload = {
   date?: string; // the bill's own day (YYYY-MM-DD) when it is entered later; today if left out
+  time?: string; // the time on that day (HH:MM); the time now if left out
   supplierId: string;
   metal: string;
   standard: Standard;
@@ -61,6 +64,10 @@ export type PurchasePayload = {
   fine: number;
   paidAmt: number;
   mode: string;
+  // The supplier's credit on what is left unpaid: a number of days from the bill's day, or the
+  // due date itself. Both empty when no date was agreed.
+  creditDays?: string;
+  dueDate?: string;
   items: Array<{
     itemTypeId: string;
     grossWeight: number;
@@ -78,7 +85,9 @@ export async function createPurchase(payload: PurchasePayload) {
   const user = await getCurrentUser();
   try {
     // The bill, the pieces received and any payment made with it all carry the bill's own date.
-    const date = entryDate(payload.date);
+    const date = entryDate(payload.date, payload.time);
+    // A bill paid in full on the spot has nothing left to fall due.
+    const dueDate = payload.paidAmt < payload.billAmt ? parseDue(payload.dueDate, payload.creditDays, date) : null;
     await db.transaction(async (tx) => {
       // 1. Create the Bill
       const [newBill] = await tx.insert(bill).values({
@@ -90,6 +99,7 @@ export async function createPurchase(payload: PurchasePayload) {
         billAmt: payload.billAmt,
         fine: payload.fine,
         paidAmt: payload.paidAmt,
+        dueDate,
       }).returning();
       await logAudit(tx, user.id, {
         tableName: "bill",
@@ -119,10 +129,18 @@ export async function createPurchase(payload: PurchasePayload) {
         });
       }
 
-      // 4. Create Items and Stock
+      // 4. Create the purchased items. They enter stock later, when each one is labelled.
+      const types = await tx.select({ id: itemType.id, metal: itemType.metal }).from(itemType);
       for (const item of payload.items) {
+        if (!types.some((type) => type.id === item.itemTypeId && type.metal === payload.metal)) {
+          throw new UserError("Choose an item type for every item.");
+        }
         const [newItem] = await tx.insert(itemPurchased).values({
           bill: newBill.id,
+          itemType: item.itemTypeId,
+          grossWeight: item.grossWeight,
+          netWeight: item.netWeight,
+          melting: item.melting,
           wastage: item.wastage,
           making: item.making,
           extraCharges: item.extraCharges,
@@ -135,28 +153,15 @@ export async function createPurchase(payload: PurchasePayload) {
             .set({ status: "at shop", updatedAt: new Date() })
             .where(and(eq(itemOrder.id, newItem.order), inArray(itemOrder.status, ["order taken", "being made"])));
         }
-
-        const { label } = await nextLabel(tx, item.itemTypeId);
-
-        await tx.insert(itemStock).values({
-          date,
-          itemType: item.itemTypeId,
-          metal: payload.metal,
-          grossWeight: item.grossWeight,
-          netWeight: item.netWeight,
-          melting: item.melting,
-          label,
-          item: newItem.id,
-          status: 'stock',
-          // oldItemSource is null because this is a new purchase
-        });
       }
     });
 
     revalidatePath("/purchases");
     revalidatePath("/inventory");
+    revalidatePath("/orders");
     revalidatePath("/dashboard");
     revalidatePath("/ledgers");
+    revalidatePath("/daybook");
     
     return { success: true };
   } catch (error) {
@@ -174,7 +179,7 @@ export async function addBillPayment(billId: string, _prev: FormState, formData:
   if (!isCashMode(mode)) return { error: "Choose how the supplier was paid." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       // Only succeeds while the payment fits in what is still due.
       const [updated] = await tx.update(bill)
@@ -210,8 +215,32 @@ export async function addBillPayment(billId: string, _prev: FormState, formData:
   revalidatePath("/purchases");
   revalidatePath(`/purchases/${billId}`);
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
   return { success: "Payment recorded." };
+}
+
+// Set, change or clear the day a bill's credit runs out. Counted in days, it is from the bill's own day.
+export async function setBillDueDate(billId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  if (!isUuid(billId)) return { error: "Bill not found." };
+
+  try {
+    await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(bill).where(eq(bill.id, billId)).for("update");
+      if (!row) throw new UserError("Bill not found.");
+      const dueDate = parseDue(text(formData, "dueDate"), text(formData, "creditDays"), parseDbDate(row.date ?? row.createdAt).toISOString());
+      await tx.update(bill).set({ dueDate, updatedAt: new Date() }).where(eq(bill.id, billId));
+      await logAudit(tx, user.id, { tableName: "bill", recordId: billId, action: "update", oldValues: { dueDate: row.dueDate }, newValues: { dueDate } });
+    });
+  } catch (error) {
+    return fail(error, "Could not save the due date.");
+  }
+
+  revalidatePath("/purchases");
+  revalidatePath(`/purchases/${billId}`);
+  revalidatePath("/dashboard");
+  return { success: "Due date saved." };
 }
 
 // Locks the bill and values metal handed over at the bill's own rate and standard.
@@ -250,7 +279,7 @@ export async function addBillFinePayment(billId: string, _prev: FormState, formD
   if (!isBullionStandard(given)) return { error: "Choose the standard of the metal given." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { row, amt } = await applyMetalPayment(tx, billId, (standard) => round3(convertStandard(weight, given, standard)));
       const [payment] = await tx.insert(billPayment).values({
@@ -282,7 +311,7 @@ export async function addBillLangdiPayment(billId: string, _prev: FormState, for
   if (deduction < 0 || deduction >= weight) return { error: "Refining deduction must be less than the weight." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { row, standard, fine, amt } = await applyMetalPayment(tx, billId, (std) => langdiToFine(weight, testedPurity, deduction, std));
       const [payment] = await tx.insert(billPayment).values({

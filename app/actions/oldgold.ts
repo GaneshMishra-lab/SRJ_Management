@@ -2,6 +2,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { itemStock, langdiLedger, oldItem, oldItemPayment } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
@@ -18,6 +19,7 @@ function revalidateOldGold(id?: string) {
   revalidatePath("/metal");
   revalidatePath("/inventory");
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -50,7 +52,7 @@ export async function buyOldItem(_prev: FormState, formData: FormData): Promise<
   if (paid > 0 && !isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const customer = await resolveEntity(tx, user.id, formData, "customer");
       const [row] = await tx.insert(oldItem).values({
@@ -64,7 +66,9 @@ export async function buyOldItem(_prev: FormState, formData: FormData): Promise<
   }
 
   revalidateOldGold();
-  return { success: "Old metal recorded." };
+  // Entered from the day book's popup, the purchase is saved and the book stays open.
+  if (text(formData, "from") === "daybook") return { success: "Old metal recorded." };
+  redirect("/old-gold");
 }
 
 export async function payOldItem(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
@@ -76,7 +80,7 @@ export async function payOldItem(id: string, _prev: FormState, formData: FormDat
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [updated] = await tx.update(oldItem)
         .set({ paidAmt: sql`coalesce(${oldItem.paidAmt}, 0) + ${amt}`, updatedAt: new Date() })
@@ -111,7 +115,7 @@ export async function meltOldItem(id: string, _prev: FormState, formData: FormDa
   if (estPurity <= 0 || estPurity > 100) return { error: "Estimated purity must be between 0 and 100." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const row = await leaveVault(tx, id, "melted", date);
       // Phuli is low-purity gold: it joins the gold langdi, just at a lower purity.
@@ -148,7 +152,7 @@ export async function refurbishOldItem(id: string, _prev: FormState, formData: F
   if (melting <= 0 || melting > 100) return { error: "Melting must be between 0 and 100." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       await leaveVault(tx, id, "refurbished", date);
       const { label, metal } = await nextLabel(tx, itemTypeId);

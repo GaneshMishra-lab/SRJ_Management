@@ -1,4 +1,4 @@
-import { istDate } from "@/lib/format";
+import { istDate, istTime } from "@/lib/format";
 
 export type FormState ={ error?: string; success?: string } | undefined;
 
@@ -18,15 +18,23 @@ export function num(formData: FormData, name: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-// When an entry really happened, from a form's date field (YYYY-MM-DD on the shop calendar).
-// Empty or today means now; an earlier day is stamped at noon so it sits inside that shop day.
-export function entryDate(day: string | null | undefined) {
-  const today = istDate();
-  if (!day || day === today) return new Date().toISOString();
-  const at = /^\d{4}-\d{2}-\d{2}$/.test(day) ? new Date(`${day}T12:00:00+05:30`) : null;
-  if (!at || Number.isNaN(at.getTime()) || istDate(at) !== day || day > today) {
+// When an entry really happened, from a form's <DateField> (or a day and a time passed directly):
+// a day (YYYY-MM-DD) and a time (HH:MM) on the shop's calendar and clock.
+// An empty day means today; an empty time means the time on the clock right now.
+export function entryDate(source: FormData | string | null | undefined, time?: string | null) {
+  const day = (source instanceof FormData ? text(source, "date") : source) || "";
+  const clock = (source instanceof FormData ? text(source, "time") : time) || "";
+  const now = new Date();
+  const today = istDate(now);
+  if (!clock && (!day || day === today)) return now.toISOString();
+
+  if (clock && !/^([01]\d|2[0-3]):[0-5]\d$/.test(clock)) throw new UserError("Enter the time as hours and minutes.");
+  const onDay = day || today;
+  const at = /^\d{4}-\d{2}-\d{2}$/.test(onDay) ? new Date(`${onDay}T${clock ? `${clock}:00` : istTime(now)}+05:30`) : null;
+  if (!at || Number.isNaN(at.getTime()) || istDate(at) !== onDay || onDay > today) {
     throw new UserError("Choose today or an earlier date.");
   }
+  if (at > now) throw new UserError("That time has not come yet. Leave the time empty to use the time now.");
   return at.toISOString();
 }
 

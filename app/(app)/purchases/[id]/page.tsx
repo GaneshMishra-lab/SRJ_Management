@@ -4,15 +4,17 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { bill, billPayment, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
-import { addBillFinePayment, addBillLangdiPayment, addBillPayment } from "@/app/actions/purchases";
+import { addBillFinePayment, addBillLangdiPayment, addBillPayment, setBillDueDate } from "@/app/actions/purchases";
 import { RowLink } from "@/components/controls";
+import { CreditFields } from "@/components/CreditFields";
 import { Card, DateField, Field, ModeField, PageHeader, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
-import { dateOnly, dateTime, grams, inr } from "@/lib/format";
+import { creditDaysOf, dueStatus } from "@/lib/due";
+import { dateOnly, dateTime, grams, inr, istDate, parseDbDate } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
-import { rowClass, stockStatus, tdClass, thClass } from "@/lib/styles";
+import { linkClass, rowClass, stockStatus, tdClass, thClass } from "@/lib/styles";
 
 export default async function PurchaseBillPage({ params }: { params: Promise<{ id: string }> }) {
   await getCurrentUser();
@@ -33,41 +35,51 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
       making: itemPurchased.making,
       extraCharges: itemPurchased.extraCharges,
       amt: itemPurchased.amt,
+      netWeight: itemPurchased.netWeight,
+      melting: itemPurchased.melting,
+      billedType: itemPurchased.itemType,
       stockId: itemStock.id,
       label: itemStock.label,
       status: itemStock.status,
-      netWeight: itemStock.netWeight,
-      melting: itemStock.melting,
-      typeName: itemType.name,
+      stockType: itemStock.itemType,
     })
     .from(itemPurchased)
     .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
-    .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
     .where(eq(itemPurchased.bill, id))
-    .orderBy(asc(itemStock.label));
+    .orderBy(asc(itemPurchased.createdAt), asc(itemPurchased.id));
+  // A piece is named by the type it was labelled as; until then, by the type on the bill.
+  const typeNames = new Map((await db.select({ id: itemType.id, name: itemType.name }).from(itemType)).map((type) => [type.id, type.name]));
+  const toLabel = items.filter((item) => !item.stockId).length;
 
   const payments = await db.select().from(billPayment).where(eq(billPayment.bill, id)).orderBy(asc(billPayment.date));
 
   const b = purchase.bill;
   const due = round2((b.billAmt ?? 0) - (b.paidAmt ?? 0));
   const fineDue = b.rate ? due / b.rate : 0;
+  const credit = dueStatus(b.dueDate, due);
+  const billDay = istDate(parseDbDate(b.date ?? b.createdAt));
 
   return (
     <div className="space-y-6">
       <PageHeader
         back={{ href: "/purchases", label: "Purchases" }}
-        title={<>{purchase.supplierName ?? "Unknown supplier"}<StatusBadge tone={due > 0 ? "warn" : "ok"}>{due > 0 ? "Pending" : "Paid"}</StatusBadge></>}
+        title={<>{purchase.supplierName ?? "Unknown supplier"}<StatusBadge tone={due > 0 ? "warn" : "ok"}>{due > 0 ? "Pending" : "Paid"}</StatusBadge>{credit && credit.tone !== "neutral" && <StatusBadge tone={credit.tone}>{credit.label}</StatusBadge>}</>}
         subtitle={`${b.metal} bill of ${dateOnly(b.date)} · standard ${b.standard ?? "not recorded"} · rate ${inr(b.rate)} per gram fine`}
       />
 
       <Stats items={[
         { name: "Bill amount", value: inr(b.billAmt) },
         { name: "Paid", value: inr(b.paidAmt) },
-        { name: "Balance due", value: inr(due), tone: due > 0 ? "accent" : undefined },
+        {
+          name: "Balance due",
+          value: inr(due),
+          tone: credit?.tone === "bad" ? "bad" : due > 0 ? "accent" : undefined,
+          note: due <= 0 ? undefined : credit ? `By ${dateOnly(b.dueDate)} · ${credit.label.toLowerCase()}` : "No due date set",
+        },
         { name: "Due in fine", value: grams(fineDue) },
       ]} />
 
-      <Card title="Pieces" flush>
+      <Card title="Pieces" hint={toLabel > 0 ? `As billed. ${toLabel} still to be labelled and added to stock.` : "As billed. All are labelled."} flush>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-fg-2">
             <thead>
@@ -88,8 +100,8 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                   <>
                     <td className={tdClass}>
                       {item.stockId
-                        ? <Link href={`/inventory/${item.stockId}`} className="font-medium text-fg">{item.typeName ?? "Piece"} #{item.label ?? "-"}</Link>
-                        : "-"}
+                        ? <Link href={`/inventory/${item.stockId}`} className="font-medium text-fg">{typeNames.get(item.stockType ?? "") ?? "Piece"} #{item.label ?? "-"}</Link>
+                        : <Link href={`/inventory/label/${item.id}`} className="font-medium text-fg">{typeNames.get(item.billedType ?? "") ?? "Item"}</Link>}
                     </td>
                     <td className={`${tdClass} text-right tabular-nums`}>{grams(item.netWeight)}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>{item.melting ?? 0}%</td>
@@ -98,15 +110,15 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                     <td className={`${tdClass} text-right tabular-nums`}>{inr(item.extraCharges)}</td>
                     <td className={`${tdClass} text-right text-fg tabular-nums`}>{inr(item.amt)}</td>
                     <td className={tdClass}>
-                      {stockStatus[item.status ?? ""]
-                        ? <StatusBadge tone={stockStatus[item.status ?? ""].tone}>{stockStatus[item.status ?? ""].label}</StatusBadge>
-                        : "-"}
+                      {!item.stockId
+                        ? <span className="inline-flex items-center gap-3"><StatusBadge tone="warn">To label</StatusBadge><Link href={`/inventory/label/${item.id}`} className={linkClass}>Add to stock</Link></span>
+                        : stockStatus[item.status ?? ""]
+                          ? <StatusBadge tone={stockStatus[item.status ?? ""].tone}>{stockStatus[item.status ?? ""].label}</StatusBadge>
+                          : "-"}
                     </td>
                   </>
                 );
-                return item.stockId
-                  ? <RowLink key={item.id} href={`/inventory/${item.stockId}`} className={rowClass}>{cells}</RowLink>
-                  : <tr key={item.id} className={rowClass}>{cells}</tr>;
+                return <RowLink key={item.id} href={item.stockId ? `/inventory/${item.stockId}` : `/inventory/label/${item.id}`} className={rowClass}>{cells}</RowLink>;
               })}
             </tbody>
           </table>
@@ -143,6 +155,19 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                 <ModeField label="Paid from" />
               </div>
               <DateField />
+            </ActionForm>
+          </Card>
+        )}
+
+        {due > 0 && (
+          <Card
+            title="Supplier's credit"
+            hint={b.dueDate
+              ? `To be paid by ${dateOnly(b.dueDate)}, ${creditDaysOf(billDay, b.dueDate)} days from the bill. Enter new days or a new date to change it; save both empty to remove it.`
+              : "No due date yet. Days are counted from the bill's date."}
+          >
+            <ActionForm action={setBillDueDate.bind(null, id)} submitLabel="Save due date" tone="secondary">
+              <CreditFields baseDay={billDay} />
             </ActionForm>
           </Card>
         )}

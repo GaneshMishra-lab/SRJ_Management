@@ -36,6 +36,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     .innerJoin(itemStock, eq(itemStock.item, itemPurchased.id))
     .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
     .where(eq(itemPurchased.order, id));
+  // Arrived on a supplier's bill but not yet labelled, so not yet a piece that can be sold.
+  const unlabelled = await db
+    .select({ id: itemPurchased.id, netWeight: itemPurchased.netWeight })
+    .from(itemPurchased)
+    .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
+    .where(and(eq(itemPurchased.order, id), isNull(itemStock.id)));
   const [sale] = await db.select({ id: itemSaleBill.id }).from(itemSaleBill).where(and(eq(itemSaleBill.order, id), isNull(itemSaleBill.cancelledAt)));
   const open = order.status !== "dispatched";
 
@@ -56,10 +62,13 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
 
       <Card title="Progress">
         <ul className="space-y-2 text-sm text-fg-2">
-          {pieces.length === 0 ? (
+          {pieces.length === 0 && unlabelled.length === 0 ? (
             <li className="text-fg-2">No piece has arrived yet. When the maker&apos;s bill comes in, pick this order on the piece in <Link href="/purchases/new" className={linkClass}>New Purchase</Link>.</li>
           ) : pieces.map((piece) => (
             <li key={piece.id}>Arrived: <Link href={`/inventory/${piece.id}`} className={linkClass}>{piece.typeName ?? "Piece"} #{piece.label}</Link> · {grams(piece.netWeight)}</li>
+          ))}
+          {unlabelled.map((item) => (
+            <li key={item.id}>Arrived, waiting to be labelled · {grams(item.netWeight)}. <Link href={`/inventory/label/${item.id}`} className={linkClass}>Add it to stock</Link> before it can be delivered.</li>
           ))}
           {sale
             ? <li>Delivered on a <Link href={`/sales/${sale.id}`} className={linkClass}>sale bill</Link>, with the advance applied to it.</li>

@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
+import { Plus } from "lucide-react";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { oldItem } from "@/db/schema/sales";
-import { buyOldItem } from "@/app/actions/oldgold";
-import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, EntityFields, Grams, linkClass, ModeField, PageHeader, Percent, Rupees, SelectField, StatusBadge } from "@/components/ui";
+import { DataTable, linkClass, PageHeader, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
 import { dateOnly, grams, inr } from "@/lib/format";
+import { btn } from "@/lib/styles";
 
 const oldItemSource = (item: { saleBill: string | null; order: string | null; goldLoan: string | null }) =>
   item.saleBill ? "Exchange on sale" : item.order ? "Advance on order" : item.goldLoan ? "Defaulted pledge" : "Bought";
@@ -16,7 +15,6 @@ const oldItemSource = (item: { saleBill: string | null; order: string | null; go
 export default async function OldGoldPage() {
   await getCurrentUser();
 
-  const customers = await listEntities(["customer"]);
   const items = await db
     .select({ item: oldItem, customerName: entity.name })
     .from(oldItem)
@@ -26,22 +24,12 @@ export default async function OldGoldPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Old Gold" subtitle="Old metal bought, exchanged or taken over, and what became of it." />
-
-      <Card title="Buy old metal" hint="For old metal given against a sale, add it on the sale bill instead.">
-        <ActionForm action={buyOldItem} submitLabel="Record old metal">
-          <EntityFields label="Customer" entities={customers} />
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <SelectField label="Metal" name="metal" options={["Gold", "Silver", "Phuli"]} />
-            <Grams label="Weight (g)" name="weight" required />
-            <Percent label="Melting (%)" name="melting" min="0.001" required />
-            <Rupees label="Agreed value (₹)" name="amt" required />
-            <Rupees label="Paid now (₹)" name="paid" min="0" />
-            <ModeField label="Paid from" />
-          </div>
-          <DateField />
-        </ActionForm>
-      </Card>
+      <PageHeader title="Old Gold" subtitle="Old metal bought, exchanged or taken over, and what became of it.">
+        <Link href="/old-gold/new" className={btn()}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Buy old metal
+        </Link>
+      </PageHeader>
 
       <DataTable
         head={["Date", "Customer", "Metal", "Weight", "Melting", "Value", "Owed", "Source", "Status"]}

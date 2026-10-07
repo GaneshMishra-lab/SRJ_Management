@@ -1,12 +1,15 @@
 import Link from "next/link";
-import { and, desc, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cashLedger } from "@/db/schema/ledger";
-import { itemSaleBill, itemStock } from "@/db/schema/sales";
+import { entity, miscItem } from "@/db/schema/entities";
+import { cashLedger, miscTrade } from "@/db/schema/ledger";
+import { bill, itemSaleBill, itemStock } from "@/db/schema/sales";
 import { setDailyRates } from "@/app/actions/ledger";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DateField, Empty, PageHeader, Stats } from "@/components/ui";
+import { Card, DateField, Empty, PageHeader, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
+import { dueDateFrom, dueStatus } from "@/lib/due";
+import { round2 } from "@/lib/pricing";
 import { dateOnly, dateTime, grams, inr, istDate, istDayRange } from "@/lib/format";
 import { cashBalances, getCurrentRates } from "@/lib/ledger";
 import { btn, hintClass, inputClass, labelClass, linkClass } from "@/lib/styles";
@@ -45,6 +48,29 @@ export default async function Dashboard() {
     .from(itemSaleBill)
     .where(and(gte(itemSaleBill.date, start), lt(itemSaleBill.date, end), isNull(itemSaleBill.cancelledAt)));
 
+  // What is owed to suppliers and is overdue, or falls due within the week.
+  const soon = dueDateFrom(today, 7);
+  const owedBills = await db
+    .select({ id: bill.id, dueDate: bill.dueDate, total: bill.billAmt, paid: bill.paidAmt, what: bill.metal, supplier: entity.name })
+    .from(bill)
+    .leftJoin(entity, eq(bill.supplier, entity.id))
+    .where(and(lte(bill.dueDate, soon), sql`coalesce(${bill.billAmt}, 0) > coalesce(${bill.paidAmt}, 0)`));
+  const owedMisc = await db
+    .select({ id: miscTrade.id, dueDate: miscTrade.dueDate, total: miscTrade.amt, paid: miscTrade.paidAmt, what: miscItem.name, supplier: entity.name })
+    .from(miscTrade)
+    .leftJoin(miscItem, eq(miscTrade.item, miscItem.id))
+    .leftJoin(entity, eq(miscTrade.entity, entity.id))
+    .where(and(eq(miscTrade.type, "purchase"), lte(miscTrade.dueDate, soon), sql`coalesce(${miscTrade.amt}, 0) > coalesce(${miscTrade.paidAmt}, 0)`));
+  const dues = [
+    ...owedBills.map((row) => ({ ...row, what: `${row.what ?? ""} bill`.trim(), href: `/purchases/${row.id}` })),
+    ...owedMisc.map((row) => ({ ...row, href: "/misc" })),
+  ]
+    .map((row) => {
+      const balance = round2((row.total ?? 0) - (row.paid ?? 0));
+      return { ...row, balance, credit: dueStatus(row.dueDate, balance, today) };
+    })
+    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+
   const recent = await db.select().from(cashLedger).orderBy(desc(cashLedger.date), desc(cashLedger.createdAt)).limit(8);
 
   return (
@@ -60,6 +86,32 @@ export default async function Dashboard() {
         { name: "Gold in stock", value: grams(gold?.weight), note: `${gold?.pieces ?? 0} pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}` },
         { name: "Today's sales", value: inr(todaySales?.total), note: `${todaySales?.bills ?? 0} ${todaySales?.bills === 1 ? "bill" : "bills"}` },
       ]} />
+
+      {dues.length > 0 && (
+        <Card
+          title="Supplier dues"
+          hint={`Overdue, or to be paid within 7 days. ${inr(dues.reduce((sum, row) => sum + row.balance, 0))} in all.`}
+          action={<Link href="/purchases" className={`text-sm ${linkClass}`}>Purchases</Link>}
+          flush
+        >
+          <ul>
+            {dues.map((row) => (
+              <li key={row.id} className="border-t border-line">
+                <Link href={row.href} className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-fg/3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-fg">{row.supplier ?? "Unknown supplier"} <span className="text-fg-3">· {row.what}</span></p>
+                    <p className="text-[13px] text-fg-3">By {dateOnly(row.dueDate)}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    {row.credit && <StatusBadge tone={row.credit.tone}>{row.credit.label}</StatusBadge>}
+                    <span className="text-sm text-fg tabular-nums">{inr(row.balance)}</span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
         <Card
@@ -111,7 +163,7 @@ export default async function Dashboard() {
                 );
               })}
             </div>
-            <DateField label="For a missed day, pick its date" className="" />
+            <DateField label="For a missed day, pick its date" className="" time={false} />
           </ActionForm>
         </Card>
       </div>

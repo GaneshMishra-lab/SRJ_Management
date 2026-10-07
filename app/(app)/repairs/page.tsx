@@ -1,19 +1,17 @@
 import Link from "next/link";
 import { desc, eq } from "drizzle-orm";
+import { Plus } from "lucide-react";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { itemRepairing } from "@/db/schema/sales";
-import { createRepair } from "@/app/actions/repairs";
-import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, EntityFields, Field, Grams, linkClass, PageHeader, Rupees, StatusBadge } from "@/components/ui";
+import { DataTable, linkClass, PageHeader, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
 import { dateOnly, grams, inr } from "@/lib/format";
+import { btn } from "@/lib/styles";
 
 export default async function RepairsPage() {
   await getCurrentUser();
 
-  const customers = await listEntities(["customer"]);
   const repairs = await db
     .select({ repair: itemRepairing, customerName: entity.name })
     .from(itemRepairing)
@@ -23,19 +21,12 @@ export default async function RepairsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Repairs" subtitle="Customer items taken in for repair, with weights recorded both ways." />
-
-      <Card title="Take in a repair">
-        <ActionForm action={createRepair} submitLabel="Take in">
-          <EntityFields label="Customer" entities={customers} />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="col-span-2"><Field label="Item and what to repair" name="desc" type="text" placeholder="e.g. Gold chain, broken clasp" required /></div>
-            <Grams label="Weight received (g)" name="receivedWeight" required />
-            <Rupees label="Estimated charge (₹)" name="amt" min="0" />
-          </div>
-          <DateField />
-        </ActionForm>
-      </Card>
+      <PageHeader title="Repairs" subtitle="Customer items taken in for repair, with weights recorded both ways.">
+        <Link href="/repairs/new" className={btn()}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Take in repair
+        </Link>
+      </PageHeader>
 
       <DataTable
         head={["Received", "Customer", "Item", "Weight in", "Charge", "Due", "Status"]}

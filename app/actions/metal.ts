@@ -16,6 +16,7 @@ import { round2, round3 } from "@/lib/pricing";
 function revalidateMetal() {
   revalidatePath("/metal");
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -35,7 +36,7 @@ export async function tradeBullion(_prev: FormState, formData: FormData): Promis
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "supplier");
       const amt = round2(weight * rate);
@@ -86,7 +87,7 @@ export async function tradeLangdi(_prev: FormState, formData: FormData): Promise
   if (deduction < 0 || deduction >= weight) return { error: "Refining deduction must be less than the weight." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "supplier");
       const fine = langdiToFine(weight, testedPurity, deduction, standard);
@@ -127,7 +128,7 @@ export async function sellLangdi(_prev: FormState, formData: FormData): Promise<
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "supplier");
       const [entry] = await tx.insert(langdiLedger).values({

@@ -214,7 +214,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
           }
         >
           <ActionForm action={returnFromApproval.bind(null, id)} submitLabel="Piece came back">
-            <DateField label="Came back on (today if left empty)" className="max-w-xs" />
+            <DateField label="Came back on (today if left empty)" />
           </ActionForm>
         </Card>
       )}

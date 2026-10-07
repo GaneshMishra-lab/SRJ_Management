@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  BookOpen,
   ShoppingBag,
   Package,
   ShoppingCart,
@@ -53,6 +54,7 @@ const sections = [
   {
     title: "Money",
     items: [
+      { name: "Day Book", href: "/daybook", icon: BookOpen },
       { name: "Cash Ledger", href: "/ledgers", icon: WalletCards },
       { name: "Metal & Langdi", href: "/metal", icon: Scale },
       { name: "Gold Loans", href: "/gold-loans", icon: HandCoins },
@@ -102,7 +104,7 @@ export function Sidebar({
   return (
     <>
     {/* Top bar on phones and tablets; the menu itself slides in from the left. */}
-    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-sidebar px-3 lg:hidden">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-sidebar px-3 lg:hidden print:hidden">
       <button type="button" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} className={iconButtonClass}>
         <Menu className="h-5 w-5" />
       </button>
@@ -115,7 +117,7 @@ export function Sidebar({
     )}
 
     <div
-      className={`fixed inset-y-0 left-0 z-40 flex w-68 max-w-[85vw] shrink-0 flex-col border-r border-line bg-sidebar text-fg shadow-pop transition-[transform,width] duration-200 lg:static lg:z-10 lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none ${
+      className={`fixed inset-y-0 left-0 z-40 flex w-68 max-w-[85vw] shrink-0 flex-col border-r border-line bg-sidebar text-fg shadow-pop transition-[transform,width] duration-200 lg:static lg:z-10 lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none print:hidden ${
         open ? "translate-x-0" : "-translate-x-full max-lg:invisible"
       } ${collapsed ? "lg:w-17" : ""}`}
     >

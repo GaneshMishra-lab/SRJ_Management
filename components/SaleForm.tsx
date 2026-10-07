@@ -36,6 +36,8 @@ export function SaleForm({
   rates,
   orders,
   date,
+  onSaved,
+  onCancel,
 }: {
   customers: Customer[];
   pieces: Piece[];
@@ -43,6 +45,10 @@ export function SaleForm({
   orders: ReadyOrder[];
   // The bill's own day (YYYY-MM-DD) when the sale is entered later; today if left out.
   date?: string;
+  // Given when the form is shown inside another screen (the day book's popup), which then
+  // decides what happens next. Left out, a saved bill opens and Cancel goes back a page.
+  onSaved?: () => void;
+  onCancel?: () => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -61,6 +67,8 @@ export function SaleForm({
   const [mode, setMode] = useState("cash");
   // For a bill entered later: the day its money goes into the cash book, if not the bill's own day.
   const [paymentDate, setPaymentDate] = useState("");
+  // The time of the sale on the bill's day. Empty means the time now.
+  const [billTime, setBillTime] = useState("");
 
   const pieceById = new Map(pieces.map((piece) => [piece.id, piece]));
   const pieceName = (piece: Piece) => `${piece.typeName ?? "Piece"} #${piece.label ?? "-"}`;
@@ -121,6 +129,7 @@ export function SaleForm({
     setLoading(true);
     const res = await createSale({
       date,
+      time: billTime || undefined,
       customerId: isNewCustomer ? undefined : customerId,
       newCustomer: isNewCustomer ? { name: newCustomerName, contact: newCustomerContact } : undefined,
       orderId: orderId || undefined,
@@ -133,7 +142,8 @@ export function SaleForm({
     });
 
     if (res.success) {
-      router.push(`/sales/${res.id}`);
+      if (onSaved) onSaved();
+      else router.push(`/sales/${res.id}`);
     } else {
       setLoading(false);
       setError(res.error ?? "Failed to create the sale.");
@@ -327,6 +337,13 @@ export function SaleForm({
               <option value="cash">Cash (Vault)</option>
               <option value="online">Online (Bank)</option>
             </SelectField>
+            <Field
+              label="Time of sale"
+              type="time"
+              value={billTime}
+              onChange={(e) => setBillTime(e.target.value)}
+              hint="Leave empty for the time now."
+            />
             {date && (
               <Field
                 label="Payment entered on"
@@ -354,7 +371,7 @@ export function SaleForm({
               <button type="submit" disabled={loading} className={btn()}>
                 {loading ? "Saving..." : "Save sale"}
               </button>
-              <button type="button" onClick={() => router.back()} className={btn("ghost")}>
+              <button type="button" onClick={() => (onCancel ? onCancel() : router.back())} className={btn("ghost")}>
                 Cancel
               </button>
             </div>

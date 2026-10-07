@@ -16,6 +16,7 @@ function revalidateLoans(id?: string) {
   revalidatePath("/gold-loans");
   if (id) revalidatePath(`/gold-loans/${id}`);
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -34,7 +35,7 @@ export async function createGoldLoan(_prev: FormState, formData: FormData): Prom
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const customer = await resolveEntity(tx, user.id, formData, "customer");
       const [loan] = await tx.insert(goldLoan).values({
@@ -83,7 +84,7 @@ export async function addGoldLoanPayment(id: string, _prev: FormState, formData:
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { loan, principalDue } = await loanPosition(tx, id, date);
       if (loan.status !== "active") throw new UserError("This loan is no longer active.");
@@ -123,7 +124,7 @@ export async function defaultGoldLoan(id: string, _prev: FormState, formData: Fo
   if (melting <= 0 || melting > 100) return { error: "Melting must be between 0 and 100." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const { loan, principalDue, interestDue } = await loanPosition(tx, id, date);
       const [updated] = await tx.update(goldLoan)

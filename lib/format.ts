@@ -22,6 +22,9 @@ export const dateOnly = (value: string | Date | null | undefined) =>
 // The shop's calendar day (YYYY-MM-DD), in Indian time.
 export const istDate = (d = new Date()) => new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
 
+// The time on the shop's clock (HH:MM:SS), in Indian time.
+export const istTime = (d = new Date()) => new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(11, 19);
+
 // UTC instants bounding one Indian calendar day: [start, end).
 export function istDayRange(day: string) {
   const start = new Date(`${day}T00:00:00+05:30`);

@@ -2,6 +2,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { itemRepairing, itemRepairingPayment } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
@@ -14,6 +15,7 @@ function revalidateRepairs(id?: string) {
   revalidatePath("/repairs");
   if (id) revalidatePath(`/repairs/${id}`);
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -26,7 +28,7 @@ export async function createRepair(_prev: FormState, formData: FormData): Promis
   if (receivedWeight <= 0) return { error: "Enter the weight received, to avoid disputes later." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const customer = await resolveEntity(tx, user.id, formData, "customer");
       const [row] = await tx.insert(itemRepairing).values({
@@ -40,7 +42,7 @@ export async function createRepair(_prev: FormState, formData: FormData): Promis
   }
 
   revalidateRepairs();
-  return { success: "Repair taken in." };
+  redirect("/repairs");
 }
 
 // Moves a repair to its next status; fails if it is not at the expected step.
@@ -58,7 +60,7 @@ export async function sendRepair(id: string, _prev: FormState, formData: FormDat
   const user = await getCurrentUser();
   if (!isUuid(id)) return { error: "Repair not found." };
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const karigar = await resolveEntity(tx, user.id, formData, "supplier");
       await step(tx, user.id, id, "taken", { status: "sent for repair", karigar, sentDate: date });
@@ -76,7 +78,7 @@ export async function markRepaired(id: string, _prev: FormState, formData: FormD
   if (!isUuid(id)) return { error: "Repair not found." };
   if (amt < 0) return { error: "Charge cannot be negative." };
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [current] = await tx.select().from(itemRepairing).where(eq(itemRepairing.id, id));
       if (current && amt < (current.paidAmt ?? 0)) throw new UserError("The charge cannot be less than what is already paid.");
@@ -98,7 +100,7 @@ export async function returnRepair(id: string, _prev: FormState, formData: FormD
   if (!isUuid(id)) return { error: "Repair not found." };
   if (returnedWeight <= 0) return { error: "Enter the weight handed back." };
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       await step(tx, user.id, id, "repaired", { status: "returned", returnedDate: date, returnedWeight });
     });
@@ -118,7 +120,7 @@ export async function addRepairPayment(id: string, _prev: FormState, formData: F
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [updated] = await tx.update(itemRepairing)
         .set({ paidAmt: sql`coalesce(${itemRepairing.paidAmt}, 0) + ${amt}`, updatedAt: new Date() })

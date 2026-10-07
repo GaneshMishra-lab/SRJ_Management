@@ -1,0 +1,429 @@
+/*
+  The day book: a picture of the shop's handwritten rojmel. The paper and ink keep their own
+  colours in light and dark, as a real page would. Every rule is under .daybook, because a
+  stylesheet imported by one page stays loaded after leaving it.
+*/
+.daybook {
+  container-type: inline-size;
+}
+
+.daybook-book {
+  --paper: #f8f2e2;
+  --ink: #1c3b8e;
+  --rule: rgb(52 96 170 / 0.16);
+  --text: 1.25rem;
+  --line: 2.125rem; /* one ruled line */
+  --gutter: 6.75rem; /* the amount column, as wide as a head's total line */
+  --gap: 2.25rem; /* between जमा and नावे */
+  --drop: 0.4rem; /* how far writing is lowered to sit on its line */
+  --head-rise: 0.38em; /* a head's top stroke runs along the Devanagari headline of its title */
+  --stroke: 1.5px;
+  display: grid;
+  gap: 1.5rem;
+}
+
+/* Latin letters have no headline, so the stroke passes above them. */
+.daybook[lang="en"] .daybook-book {
+  --head-rise: 0.64em;
+}
+
+.daybook-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 62rem;
+  margin-inline: auto;
+  padding: 1.25rem 2.25rem 2.75rem;
+  border-radius: 3px;
+  background-color: var(--paper);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .36  0 0 0 0 .27  0 0 0 0 .12  .15 0 0 0 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% 40%, transparent 55%, rgb(120 90 40 / 0.07));
+  box-shadow: 0 1px 2px rgb(60 45 15 / 0.14), 0 14px 34px rgb(60 45 15 / 0.14);
+  color: var(--ink);
+  font-family: var(--font-kalam), "Kalam", "Segoe Print", cursive;
+  font-size: var(--text);
+  line-height: var(--line);
+}
+
+.daybook-marks {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-weight: 700;
+}
+
+/* Each line of the invocation is spread from edge to edge, as it is written in the book. */
+.daybook-invocation {
+  white-space: pre-line;
+  text-align: justify;
+  text-align-last: justify;
+  font-size: 1.15em;
+}
+
+.daybook-date {
+  margin-block: calc(var(--line) * 0.25) calc(var(--line) * 0.5);
+  text-align: center;
+  font-size: 1.2em;
+  font-weight: 700;
+}
+
+.daybook-date[data-small] {
+  margin-block: 0 calc(var(--line) * 0.5);
+  font-size: 1em;
+  font-weight: 400;
+}
+
+/* Faint ruled lines, one at the foot of every row of writing. */
+.daybook-ruled {
+  background-image: linear-gradient(to bottom, transparent calc(100% - 1px), var(--rule) calc(100% - 1px));
+  background-size: 100% var(--line);
+}
+
+.daybook-columns,
+.daybook-feet {
+  display: grid;
+  grid-template-columns: 58fr 42fr;
+  column-gap: var(--gap);
+  align-items: start;
+}
+
+.daybook-col {
+  min-width: 0;
+}
+
+.daybook-col-title {
+  height: var(--line);
+  text-align: center;
+  font-size: 1.08em;
+  font-weight: 700;
+}
+
+/* Writing sits low in its row, with its tails crossing the line. */
+.daybook-ink {
+  position: relative;
+  top: var(--drop);
+}
+
+/* On the first sheet नावे begins level with the second जमा head, below the opening cash. */
+.daybook-lead {
+  height: calc(var(--line) * 2);
+}
+
+/* However many entries a head has, an empty line is left before the next head. */
+.daybook-head {
+  box-sizing: border-box;
+  min-height: calc(var(--line) * (1 + var(--blank, 4)));
+  padding-bottom: var(--line);
+}
+
+.daybook-head-row {
+  display: flex;
+  height: var(--line);
+  font-weight: 700;
+}
+
+.daybook-total {
+  flex: none;
+  box-sizing: border-box;
+  width: var(--gutter);
+  padding-right: 0.5rem;
+  border-bottom: var(--stroke) solid currentColor;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* A name too long for its column is cut short at the side; its tails still hang below the line. */
+.daybook-title {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 1.5rem 0 0.45rem;
+  overflow-x: clip;
+  font-size: 1.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The upright stroke at the end of the total line, and the top stroke running on from it. */
+.daybook-title::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--line) / 2 + var(--drop) - var(--head-rise)) 0 0 0;
+  border-top: var(--stroke) solid currentColor;
+  border-left: var(--stroke) solid currentColor;
+  pointer-events: none;
+}
+
+/* The way into the entry form for one head. It keeps out of sight until the head is pointed at. */
+.daybook-add {
+  flex: none;
+  align-self: center;
+  position: relative;
+  top: calc(var(--drop) / 2);
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: 0.25rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.daybook-head:hover .daybook-add,
+.daybook-add:focus-visible {
+  opacity: 0.75;
+}
+
+.daybook-add:hover {
+  background-color: rgb(28 59 142 / 0.1);
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .daybook-add {
+    opacity: 0.6;
+  }
+}
+
+.daybook-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daybook-row {
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  width: 100%;
+  min-height: var(--line);
+  text-align: left;
+}
+
+/* A line that opens when clicked: in the form, or on the screen where it was made. */
+button.daybook-row,
+a.daybook-row {
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+button.daybook-row:hover,
+a.daybook-row:hover {
+  background-color: rgb(28 59 142 / 0.07);
+}
+
+/* An entry just saved is written in from left to right: the amount, then what it was for. */
+.daybook-line[data-writing] .daybook-amt,
+.daybook-line[data-writing] .daybook-what {
+  animation: daybook-write 0.45s ease-out both;
+}
+
+.daybook-line[data-writing] .daybook-what {
+  animation-duration: 0.9s;
+  animation-delay: 0.3s;
+}
+
+@keyframes daybook-write {
+  from {
+    clip-path: inset(0 100% -1em 0);
+  }
+  to {
+    clip-path: inset(0 0 -1em 0);
+  }
+}
+
+.daybook-amt {
+  box-sizing: border-box;
+  padding-right: 0.5rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.daybook-what {
+  padding-left: 0.6rem;
+  overflow-wrap: anywhere;
+}
+
+.daybook-what .daybook-more {
+  margin-left: 0.55em;
+}
+
+/* A weight keeps its unit, and a payment mode its brackets, when a long line wraps. */
+.daybook-what .daybook-more[data-whole] {
+  white-space: nowrap;
+}
+
+.daybook-feet {
+  margin-top: var(--line);
+  font-weight: 700;
+}
+
+.daybook-sum {
+  height: var(--line);
+}
+
+.daybook-sum .daybook-amt {
+  border-top: var(--stroke) solid currentColor;
+}
+
+.daybook-sum[data-closing] .daybook-amt {
+  border-top: 0;
+  border-bottom: 4px double currentColor;
+}
+
+/* A figure noted beside the totals, not one of them. */
+.daybook-sum[data-aside] {
+  font-weight: 400;
+}
+
+.daybook-sum[data-aside] .daybook-amt {
+  border-top: 0;
+}
+
+/* Turning to another day. */
+.daybook-book[data-turn="next"] {
+  transform-origin: left center;
+  animation: daybook-turn-next 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.daybook-book[data-turn="prev"] {
+  transform-origin: right center;
+  animation: daybook-turn-prev 0.45s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes daybook-turn-next {
+  from {
+    opacity: 0;
+    transform: perspective(2200px) rotateY(-26deg);
+  }
+}
+
+@keyframes daybook-turn-prev {
+  from {
+    opacity: 0;
+    transform: perspective(2200px) rotateY(26deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daybook-book[data-turn],
+  .daybook-line[data-writing] .daybook-amt,
+  .daybook-line[data-writing] .daybook-what {
+    animation: none;
+  }
+}
+
+/* A narrower page: smaller writing and a tighter amount column. */
+@container (max-width: 760px) {
+  .daybook-book {
+    --text: 1.125rem;
+    --gutter: 5.25rem;
+    --gap: 1rem;
+    --drop: 0.42rem;
+  }
+
+  .daybook-sheet {
+    padding: 1rem 1rem 2rem;
+  }
+
+  .daybook-columns,
+  .daybook-feet {
+    grid-template-columns: 54fr 46fr;
+  }
+
+  .daybook-title {
+    padding-right: 0.75rem;
+  }
+}
+
+/* A phone: जमा on top, नावे below. */
+@container (max-width: 560px) {
+  .daybook-columns,
+  .daybook-feet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .daybook-lead {
+    display: none;
+  }
+
+  .daybook-col[data-side="debit"] {
+    margin-top: var(--line);
+  }
+
+  .daybook-invocation {
+    text-align: center;
+    text-align-last: center;
+  }
+}
+
+/* On A4: white paper, one sheet of the book to a page, and nothing of the app around it. */
+@page daybook {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  /* The paper stays white even when the browser is told to print backgrounds. */
+  body:has(.daybook-page) {
+    background: none;
+  }
+
+  .daybook-page > header {
+    display: none;
+  }
+
+  .daybook-book {
+    --text: 12pt;
+    --line: 6.9mm;
+    --gutter: 24mm;
+    --gap: 7mm;
+    --drop: 1.3mm;
+    display: block;
+    animation: none !important;
+  }
+
+  .daybook-sheet {
+    page: daybook;
+    max-width: none;
+    padding: 2mm 5mm 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    break-after: page;
+  }
+
+  .daybook-sheet:last-child {
+    break-after: auto;
+  }
+
+  /* One gradient down the whole sheet: tiled millimetre rows leave seams between them on paper.
+     Each rule stops just short of its row's end, so none shows through at the very top. */
+  .daybook-ruled {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--line) - 0.3mm),
+      var(--rule) calc(var(--line) - 0.3mm) calc(var(--line) - 0.05mm),
+      transparent calc(var(--line) - 0.05mm) var(--line)
+    );
+    background-size: auto;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .daybook-columns,
+  .daybook-feet {
+    grid-template-columns: 58fr 42fr;
+  }
+
+  .daybook-head,
+  .daybook-line,
+  .daybook-sum {
+    break-inside: avoid;
+  }
+
+  .daybook-add {
+    display: none;
+  }
+}

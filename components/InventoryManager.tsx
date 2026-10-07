@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, PackageOpen, ChevronRight } from "lucide-react";
+import { Plus, PackageOpen, ChevronRight, Tag } from "lucide-react";
 import { btn, labelClass, rowClass, stockStatus, tableWrapClass, tdClass, thClass } from "@/lib/styles";
 import { dateOnly, grams } from "@/lib/format";
 import { createItemType } from "@/app/actions/purchases";
@@ -25,9 +25,11 @@ type StockItem = {
 export function InventoryManager({
   itemTypes,
   inventory,
+  toLabel,
 }: {
   itemTypes: ItemType[];
   inventory: StockItem[];
+  toLabel: number;
 }) {
   // Only one metal is listed at a time.
   const [metal, setMetal] = useState<"Gold" | "Silver">("Gold");
@@ -69,6 +71,12 @@ export function InventoryManager({
             { value: "Silver", label: `Silver · ${pieces("Silver")}` },
           ]}
         />
+        {toLabel > 0 && (
+          <Link href="/inventory/label" className={btn("secondary")}>
+            <Tag className="h-4 w-4" aria-hidden="true" />
+            To label · {toLabel}
+          </Link>
+        )}
         <button type="button" onClick={() => { setNewItemTypeMetal(metal); setIsModalOpen(true); }} className={btn()}>
           <Plus className="h-4 w-4" aria-hidden="true" />
           New item type

@@ -94,6 +94,19 @@ export const miscTrade = pgTable("misc_trade", {
   unitPrice: rupees("unit_price"),
   amt: rupees("amt"),
   mode: text("mode"),
+  // A purchase can be left partly unpaid; a sale is always paid in full.
+  paidAmt: rupees("paid_amt"),
+  dueDate: date("due_date", { mode: "string" }),
+});
+
+// Money paid later on a misc purchase bought on credit.
+export const miscTradePayment = pgTable("misc_trade_payment", {
+  ...auditTimestamps(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  trade: uuid("trade").notNull().references(() => miscTrade.id),
+  date: timestamp("date", { mode: "string" }),
+  amt: rupees("amt"),
+  mode: text("mode"),
 });
 
 // Fine metal only, balanced separately per metal and standard.

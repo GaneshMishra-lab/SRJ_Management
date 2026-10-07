@@ -2,6 +2,7 @@
 
 import { and, eq, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { itemOrder, itemOrderPayment, oldItem } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
@@ -16,6 +17,7 @@ function revalidateOrders(id?: string) {
   revalidatePath("/orders");
   if (id) revalidatePath(`/orders/${id}`);
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
 }
 
@@ -37,7 +39,7 @@ export async function createOrder(_prev: FormState, formData: FormData): Promise
   if (advance > 0 && !isCashMode(mode)) return { error: "Choose cash or online for the advance." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const customer = await resolveEntity(tx, user.id, formData, "customer");
       const [order] = await tx.insert(itemOrder).values({
@@ -63,7 +65,9 @@ export async function createOrder(_prev: FormState, formData: FormData): Promise
   }
 
   revalidateOrders();
-  return { success: "Order saved." };
+  // Entered from the day book's popup, the order is saved and the book stays open.
+  if (text(formData, "from") === "daybook") return { success: "Order saved." };
+  redirect("/orders");
 }
 
 // Orders move forward one step at a time; "dispatched" is set by the sale that delivers it.
@@ -99,7 +103,7 @@ export async function addOrderPayment(id: string, _prev: FormState, formData: Fo
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [order] = await tx.update(itemOrder)
         .set({ amtPaid: sql`coalesce(${itemOrder.amtPaid}, 0) + ${amt}`, updatedAt: new Date() })
@@ -137,7 +141,7 @@ export async function addOrderOldGold(id: string, _prev: FormState, formData: Fo
   if (melting <= 0 || melting > 100) return { error: "Melting must be between 0 and 100." };
 
   try {
-    const date = entryDate(text(formData, "date"));
+    const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const [order] = await tx.update(itemOrder)
         .set({ amtPaid: sql`coalesce(${itemOrder.amtPaid}, 0) + ${amt}`, updatedAt: new Date() })

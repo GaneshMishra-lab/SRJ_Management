@@ -26,7 +26,7 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
   try {
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "customer");
-      const date = entryDate(text(formData, "date"));
+      const date = entryDate(formData);
       let entryId: string;
       let balance: number;
 
@@ -63,6 +63,7 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
 
   revalidatePath("/loans");
   revalidatePath("/ledgers");
+  revalidatePath("/daybook");
   revalidatePath("/dashboard");
   return { success: "Recorded." };
 }

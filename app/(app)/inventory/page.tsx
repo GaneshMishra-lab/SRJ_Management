@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { itemStock, itemType } from "@/db/schema/sales";
-import { inArray, desc } from "drizzle-orm";
+import { itemPurchased, itemStock, itemType } from "@/db/schema/sales";
+import { count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { InventoryManager } from "@/components/InventoryManager";
 import { getCurrentUser } from "@/lib/dal";
 
@@ -33,7 +33,14 @@ export default async function InventoryPage() {
     typeName: null,
   }));
 
+  // Purchased items still waiting to be labelled into stock
+  const [{ toLabel }] = await db
+    .select({ toLabel: count() })
+    .from(itemPurchased)
+    .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
+    .where(isNull(itemStock.id));
+
   return (
-    <InventoryManager itemTypes={itemTypes} inventory={inventory} />
+    <InventoryManager itemTypes={itemTypes} inventory={inventory} toLabel={toLabel} />
   );
 }

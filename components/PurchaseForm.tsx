@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createPurchase, createSupplier, PurchasePayload } from "@/app/actions/purchases";
 import { Plus, Trash2, CheckCircle2 } from "lucide-react";
 import { Segmented } from "@/components/controls";
+import { CreditFields } from "@/components/CreditFields";
+import type { Credit } from "@/components/CreditFields";
 import { Card, Field, SelectField, SummaryRow } from "@/components/ui";
 import { btn, iconButtonClass, labelClass } from "@/lib/styles";
 import { grams, inr, istDate } from "@/lib/format";
@@ -14,22 +16,45 @@ type Supplier = { id: string; name: string | null };
 type ItemType = { id: string; name: string; metal: string | null };
 type OpenOrder = { id: string; name: string | null; metal: string | null; customerName: string | null };
 
-export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supplier[], itemTypes: ItemType[], orders: OpenOrder[] }) {
+export function PurchaseForm({
+  suppliers,
+  itemTypes,
+  orders,
+  date,
+  metal,
+  onSaved,
+  onCancel,
+}: {
+  suppliers: Supplier[];
+  itemTypes: ItemType[];
+  orders: OpenOrder[];
+  // Given when the place the form is opened from settles the metal (a purchase head of the day
+  // book): the bill is of that metal and the choice is not offered.
+  metal?: "Gold" | "Silver";
+  // The bill's day to start from, when the form is opened for a day other than today.
+  date?: string;
+  // Given when the form is shown inside another screen (the day book's popup), which then
+  // decides what happens next. Left out, a saved bill leads to the list and Cancel goes back a page.
+  onSaved?: () => void;
+  onCancel?: () => void;
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const [formData, setFormData] = useState({
     supplierId: "",
-    metal: "Gold",
+    metal: metal ?? "Gold",
     rate: 0,
     paidAmt: 0,
     mode: "cash",
   });
+  const [credit, setCredit] = useState<Credit>({ creditDays: "", dueDate: "" });
 
   const [standard, setStandard] = useState<Standard>("995");
   // The bill's own day, for bills entered later. Empty means today.
-  const [billDate, setBillDate] = useState("");
+  const [billDate, setBillDate] = useState(date ?? "");
+  const [billTime, setBillTime] = useState("");
 
   const [isNewSupplier, setIsNewSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
@@ -103,6 +128,8 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
     const payload: PurchasePayload = {
       ...formData,
       date: billDate || undefined,
+      time: billTime || undefined,
+      ...credit,
       standard,
       fine: computedTotalFine,
       supplierId: finalSupplierId,
@@ -124,6 +151,7 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
     setLoading(false);
 
     if (res.success) {
+      if (onSaved) return onSaved();
       setSuccess(true);
       setTimeout(() => {
         router.push("/purchases");
@@ -202,19 +230,28 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
               max={istDate()}
               onChange={(e) => setBillDate(e.target.value)}
             />
-            <div className="space-y-1.5">
-              <span className={labelClass}>Metal</span>
-              <Segmented
-                label="Metal"
-                className="w-full"
-                value={formData.metal}
-                onChange={(metal) => {
-                  setFormData({...formData, metal});
-                  setItems(items.map(item => ({ ...item, itemTypeId: "" })));
-                }}
-                options={[{ value: "Gold", label: "Gold" }, { value: "Silver", label: "Silver" }]}
-              />
-            </div>
+            <Field
+              label="Bill time"
+              hint="Leave empty for the time now."
+              type="time"
+              value={billTime}
+              onChange={(e) => setBillTime(e.target.value)}
+            />
+            {!metal && (
+              <div className="space-y-1.5">
+                <span className={labelClass}>Metal</span>
+                <Segmented
+                  label="Metal"
+                  className="w-full"
+                  value={formData.metal}
+                  onChange={(metal) => {
+                    setFormData({...formData, metal});
+                    setItems(items.map(item => ({ ...item, itemTypeId: "" })));
+                  }}
+                  options={[{ value: "Gold", label: "Gold" }, { value: "Silver", label: "Silver" }]}
+                />
+              </div>
+            )}
             <Field
               label={`${formData.metal} rate (₹ per gram fine)`}
               type="number"
@@ -350,6 +387,10 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
               <option value="cash">Cash (Vault)</option>
               <option value="online">Online (Bank)</option>
             </SelectField>
+            {/* The supplier's credit on what is left; nothing to ask when the bill is paid in full. */}
+            <div hidden={balanceDue <= 0}>
+              <CreditFields baseDay={billDate || undefined} onChange={setCredit} />
+            </div>
 
             <dl className="space-y-2 pt-1">
               <SummaryRow label="Items total" value={inr(computedTotalAmt)} />
@@ -363,7 +404,7 @@ export function PurchaseForm({ suppliers, itemTypes, orders }: { suppliers: Supp
               <button type="submit" disabled={loading} className={btn()}>
                 {loading ? "Saving..." : "Save purchase"}
               </button>
-              <button type="button" onClick={() => router.back()} className={btn("ghost")}>
+              <button type="button" onClick={() => (onCancel ? onCancel() : router.back())} className={btn("ghost")}>
                 Cancel
               </button>
             </div>

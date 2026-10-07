@@ -2,6 +2,7 @@ import {
   auditTimestamps,
   boolean,
   check,
+  date,
   grams,
   integer,
   pct,
@@ -27,9 +28,10 @@ export const bill = pgTable("bill", {
   billAmt: rupees("bill_amt"),
   fine: grams("fine"),
   paidAmt: rupees("paid_amt"),
+  dueDate: date("due_date", { mode: "string" }), // the day the supplier's credit runs out; empty when none was agreed
 });
 
-export const itemType = pgTable("item_type", {
+export const itemType =pgTable("item_type", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
@@ -74,11 +76,16 @@ export const itemOrderPayment = pgTable("item_order_payment", {
   mode: text("mode"),
 });
 
-// Cost side of one physical piece; the piece itself is described on item_stock.
+// One physical piece as the supplier billed it. It becomes a piece in the shop (item_stock) only when
+// it is labelled; the weights there are the shop's own and may differ from the bill's.
 export const itemPurchased = pgTable("item_purchased", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   bill: uuid("bill").references(() => bill.id),
+  itemType: uuid("item_type").references(() => itemType.id),
+  grossWeight: grams("gross_weight"),
+  netWeight: grams("net_weight"),
+  melting: pct("melting"),
   wastage: pct("wastage"),
   making: rupees("making"), // per gram of net weight
   extraCharges: rupees("extra_charges"),
@@ -182,6 +189,8 @@ export const itemStock = pgTable(
   },
   (table) => ({
     typeLabelUnique: uniqueIndex("item_stock_type_label_uq").on(table.itemType, table.label),
+    // A purchased item is labelled only once.
+    itemUnique: uniqueIndex("item_stock_item_uq").on(table.item),
     sourceCheck: check(
       "item_stock_source_check",
       sql`(${table.item} is not null and ${table.oldItemSource} is null) or (${table.item} is null and ${table.oldItemSource} is not null)`,
