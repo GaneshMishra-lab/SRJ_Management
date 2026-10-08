@@ -57,6 +57,13 @@
       "when": 1791361220225,
       "tag": "0007_credit_and_heads",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791460296824,
+      "tag": "0008_loose_stock",
+      "breakpoints": true
     }
   ]
 }

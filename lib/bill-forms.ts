@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { itemOrder, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
 import { getCurrentRates } from "@/lib/ledger";
+import { looseBalances } from "@/lib/loose";
 
 // What the sale and purchase bill forms choose from. Read here once, for the two places each
 // form is shown: its own page, and the day book's popup.
@@ -50,14 +51,17 @@ export async function saleFormData(day: string) {
     };
   }).filter((order) => order.stockIds.length > 0);
 
+  // Loose metal (mani) that can be sold by weight: one choice per type and melting on hand.
+  const loose = (await looseBalances()).filter((row) => row.weight > 0);
+
   // A sale written up later is billed at its own day's rates.
   const rates = await getCurrentRates(day);
-  return { customers, pieces, orders, rates };
+  return { customers, pieces, loose, orders, rates };
 }
 
 export async function purchaseFormData() {
   const suppliers = await db.select({ id: entity.id, name: entity.name }).from(entity).where(eq(entity.type, "supplier"));
-  const itemTypes = await db.select({ id: itemType.id, name: itemType.name, metal: itemType.metal }).from(itemType);
+  const itemTypes = await db.select({ id: itemType.id, name: itemType.name, metal: itemType.metal }).from(itemType).orderBy(asc(itemType.loose), asc(itemType.name));
 
   // Orders still waiting for their piece from the maker
   const orders = await db

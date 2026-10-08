@@ -40,7 +40,8 @@ export async function nextLabel(tx: Tx, itemTypeId: string) {
   const [row] = await tx.update(itemType)
     .set({ nextLabel: sql`${itemType.nextLabel} + 1` })
     .where(eq(itemType.id, itemTypeId))
-    .returning({ label: sql<number>`${itemType.nextLabel} - 1`, metal: itemType.metal });
+    .returning({ label: sql<number>`${itemType.nextLabel} - 1`, metal: itemType.metal, loose: itemType.loose });
   if (!row) throw new UserError("Choose an item type.");
+  if (row.loose) throw new UserError("That item type is kept loose by weight, not as labelled pieces.");
   return row;
 }

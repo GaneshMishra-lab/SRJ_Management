@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { itemSale, itemSaleBill, itemStock, itemType } from "@/db/schema/sales";
@@ -20,15 +20,17 @@ export default async function SalesPage() {
       cancelledAt: itemSaleBill.cancelledAt,
       customerName: entity.name,
       amt: itemSale.amt,
-      metal: itemStock.metal,
-      weight: itemStock.netWeight,
+      // A loose line (mani) has no stock piece: its metal comes from its type, its weight from the line.
+      metal: sql<string | null>`coalesce(${itemStock.metal}, ${itemType.metal})`,
+      weight: sql<number | null>`coalesce(${itemStock.netWeight}, ${itemSale.weight})`.mapWith(Number),
       label: itemStock.label,
       typeName: itemType.name,
+      stockId: itemStock.id,
     })
     .from(itemSale)
     .innerJoin(itemSaleBill, eq(itemSale.bill, itemSaleBill.id))
     .leftJoin(itemStock, eq(itemSale.item, itemStock.id))
-    .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
+    .leftJoin(itemType, sql`${itemType.id} = coalesce(${itemStock.itemType}, ${itemSale.itemType})`)
     .leftJoin(entity, eq(itemSaleBill.customer, entity.id))
     .orderBy(desc(itemSaleBill.date), desc(itemSaleBill.createdAt))
     .limit(500);
@@ -39,7 +41,7 @@ export default async function SalesPage() {
         id: line.id,
         billId: line.billId,
         date: dateOnly(line.date),
-        item: `${line.typeName ?? "Piece"} #${line.label ?? "-"}`,
+        item: line.stockId ? `${line.typeName ?? "Piece"} #${line.label ?? "-"}` : `${line.typeName ?? "Loose metal"} · loose`,
         metal: line.metal,
         weight: line.weight,
         amt: line.amt,

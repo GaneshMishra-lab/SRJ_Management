@@ -21,7 +21,7 @@ export default async function PurchasesPage() {
       dueDate: bill.dueDate,
       supplierName: entity.name,
       // items on the bill not yet labelled into stock
-      toLabel: sql<number>`(select count(*) from item_purchased p where p.bill = ${bill.id} and not exists (select 1 from item_stock s where s.item = p.id))`.mapWith(Number),
+      toLabel: sql<number>`(select count(*) from item_purchased p where p.bill = ${bill.id} and not exists (select 1 from item_stock s where s.item = p.id) and not exists (select 1 from loose_stock_ledger l where l.source_table = 'item_purchased' and l.source_id = p.id))`.mapWith(Number),
     })
     .from(bill)
     .leftJoin(entity, eq(bill.supplier, entity.id))

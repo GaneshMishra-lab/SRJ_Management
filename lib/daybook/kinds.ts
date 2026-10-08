@@ -17,7 +17,10 @@ const byMetal = (key: string, labelMr: string, labelEn: string, head: (metal: "G
 ];
 
 export const KINDS: Kind[] = [
-  ...byMetal("sale", "विक्री बिलाचे पैसे", "Sale bill payment", (metal) => credit(`${metal} Sales`)),
+  // A sale bill is written in full on its own day, whatever was paid: what is left to pay goes
+  // under उधारी on the नावे side, and money that comes on a later day under उधारी on the जमा side.
+  ...byMetal("sale", "विक्री बिल", "Sale bill", (metal) => credit(`${metal} Sales`)),
+  { key: "sale_due_received", labelMr: "विक्री बिलाची बाकी जमा", labelEn: "Sale bill dues received", head: credit("Udhari (Credit)") },
   ...byMetal("order", "ऑर्डरचा आगाऊ", "Order advance", (metal) => credit(`${metal} Sales`)),
   ...byMetal("bullion_sell", "चोख विक्री", "Bullion sold", (metal) => credit(`${metal} Sales`)),
   { key: "repair", labelMr: "दुरुस्तीचे पैसे", labelEn: "Repair charge", head: credit("Panchurani Pethe") },
@@ -39,4 +42,5 @@ export const KINDS: Kind[] = [
   { key: "expense", labelMr: "खर्च", labelEn: "Expense", head: debit("Expenses") },
   { key: "girvi_given", labelMr: "गिरवी दिली", labelEn: "Gold loan given", head: debit("Girvi (Pledge)") },
   { key: "loan_given", labelMr: "उधारी दिली", labelEn: "Loan given", head: debit("Udhari (Credit)") },
+  { key: "sale_due", labelMr: "विक्री बिलाची बाकी", labelEn: "Unpaid part of a sale bill", head: debit("Udhari (Credit)") },
 ];

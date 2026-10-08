@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { bill, billPayment, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
+import { bill, billPayment, itemPurchased, itemStock, itemType, looseStockLedger } from "@/db/schema/sales";
+import { looseFromPurchase } from "@/lib/loose";
 import { addBillFinePayment, addBillLangdiPayment, addBillPayment, setBillDueDate } from "@/app/actions/purchases";
 import { RowLink } from "@/components/controls";
 import { CreditFields } from "@/components/CreditFields";
@@ -42,14 +43,19 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
       label: itemStock.label,
       status: itemStock.status,
       stockType: itemStock.itemType,
+      // Set for loose metal (mani), which goes into the stock of its type by weight instead of being labelled.
+      looseId: looseStockLedger.id,
+      looseType: looseStockLedger.itemType,
+      looseWeight: looseStockLedger.weight,
     })
     .from(itemPurchased)
     .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
+    .leftJoin(looseStockLedger, looseFromPurchase)
     .where(eq(itemPurchased.bill, id))
     .orderBy(asc(itemPurchased.createdAt), asc(itemPurchased.id));
   // A piece is named by the type it was labelled as; until then, by the type on the bill.
   const typeNames = new Map((await db.select({ id: itemType.id, name: itemType.name }).from(itemType)).map((type) => [type.id, type.name]));
-  const toLabel = items.filter((item) => !item.stockId).length;
+  const toLabel = items.filter((item) => !item.stockId && !item.looseId).length;
 
   const payments = await db.select().from(billPayment).where(eq(billPayment.bill, id)).orderBy(asc(billPayment.date));
 
@@ -79,7 +85,7 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
         { name: "Due in fine", value: grams(fineDue) },
       ]} />
 
-      <Card title="Pieces" hint={toLabel > 0 ? `As billed. ${toLabel} still to be labelled and added to stock.` : "As billed. All are labelled."} flush>
+      <Card title="Pieces" hint={toLabel > 0 ? `As billed. ${toLabel} still to be added to stock.` : "As billed. All are in stock."} flush>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-fg-2">
             <thead>
@@ -101,7 +107,9 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                     <td className={tdClass}>
                       {item.stockId
                         ? <Link href={`/inventory/${item.stockId}`} className="font-medium text-fg">{typeNames.get(item.stockType ?? "") ?? "Piece"} #{item.label ?? "-"}</Link>
-                        : <Link href={`/inventory/label/${item.id}`} className="font-medium text-fg">{typeNames.get(item.billedType ?? "") ?? "Item"}</Link>}
+                        : item.looseId
+                          ? <Link href={`/inventory/loose/${item.looseType}`} className="font-medium text-fg">{typeNames.get(item.looseType ?? "") ?? "Loose metal"} · loose</Link>
+                          : <Link href={`/inventory/label/${item.id}`} className="font-medium text-fg">{typeNames.get(item.billedType ?? "") ?? "Item"}</Link>}
                     </td>
                     <td className={`${tdClass} text-right tabular-nums`}>{grams(item.netWeight)}</td>
                     <td className={`${tdClass} text-right tabular-nums`}>{item.melting ?? 0}%</td>
@@ -110,7 +118,9 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                     <td className={`${tdClass} text-right tabular-nums`}>{inr(item.extraCharges)}</td>
                     <td className={`${tdClass} text-right text-fg tabular-nums`}>{inr(item.amt)}</td>
                     <td className={tdClass}>
-                      {!item.stockId
+                      {item.looseId
+                        ? <StatusBadge tone="ok">In loose stock · {grams(item.looseWeight)}</StatusBadge>
+                        : !item.stockId
                         ? <span className="inline-flex items-center gap-3"><StatusBadge tone="warn">To label</StatusBadge><Link href={`/inventory/label/${item.id}`} className={linkClass}>Add to stock</Link></span>
                         : stockStatus[item.status ?? ""]
                           ? <StatusBadge tone={stockStatus[item.status ?? ""].tone}>{stockStatus[item.status ?? ""].label}</StatusBadge>
@@ -118,7 +128,8 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
                     </td>
                   </>
                 );
-                return <RowLink key={item.id} href={item.stockId ? `/inventory/${item.stockId}` : `/inventory/label/${item.id}`} className={rowClass}>{cells}</RowLink>;
+                const href = item.stockId ? `/inventory/${item.stockId}` : item.looseId ? `/inventory/loose/${item.looseType}` : `/inventory/label/${item.id}`;
+                return <RowLink key={item.id} href={href} className={rowClass}>{cells}</RowLink>;
               })}
             </tbody>
           </table>

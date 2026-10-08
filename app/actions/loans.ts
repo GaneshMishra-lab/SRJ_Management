@@ -62,6 +62,7 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
   }
 
   revalidatePath("/loans");
+  revalidatePath("/loans/[kind]/[id]", "page");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");

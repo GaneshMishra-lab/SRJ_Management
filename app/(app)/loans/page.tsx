@@ -1,117 +1,80 @@
-import { desc, eq, sql } from "drizzle-orm";
-import { db } from "@/db";
-import { entity } from "@/db/schema/entities";
-import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
+import Link from "next/link";
 import { addLoanEntry } from "@/app/actions/loans";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, EntityFields, ModeField, PageHeader, Rupees, SelectField } from "@/components/ui";
+import { Card, DataTable, DateField, EntityFields, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
+import { getDues, type Due } from "@/lib/dues";
 import { listEntities } from "@/lib/entities";
-import { dateTime, inr } from "@/lib/format";
+import { dateOnly, inr } from "@/lib/format";
+
+const total = (rows: Due[]) => rows.reduce((sum, row) => sum + row.due, 0);
 
 export default async function LoansPage() {
   await getCurrentUser();
 
-  const people = await listEntities(["customer", "supplier", "staff"]);
-
-  const given = await db
-    .select({
-      name: entity.name,
-      balance: sql<number>`coalesce(sum(case when ${loanEntry.type} = 'repayment' then -${loanEntry.amt} else ${loanEntry.amt} end), 0)`.mapWith(Number),
-    })
-    .from(loan)
-    .innerJoin(entity, eq(loan.borrower, entity.id))
-    .leftJoin(loanEntry, eq(loanEntry.loan, loan.id))
-    .groupBy(loan.id, entity.name);
-
-  const taken = await db
-    .select({
-      name: entity.name,
-      balance: sql<number>`coalesce(sum(case when ${lendEntry.type} = 'repayment' then -${lendEntry.amt} else ${lendEntry.amt} end), 0)`.mapWith(Number),
-    })
-    .from(lend)
-    .innerJoin(entity, eq(lend.lender, entity.id))
-    .leftJoin(lendEntry, eq(lendEntry.lend, lend.id))
-    .groupBy(lend.id, entity.name);
-
-  const givenEntries = await db
-    .select({ entry: loanEntry, name: entity.name })
-    .from(loanEntry)
-    .innerJoin(loan, eq(loanEntry.loan, loan.id))
-    .innerJoin(entity, eq(loan.borrower, entity.id))
-    .orderBy(desc(loanEntry.date))
-    .limit(30);
-
-  const takenEntries = await db
-    .select({ entry: lendEntry, name: entity.name })
-    .from(lendEntry)
-    .innerJoin(lend, eq(lendEntry.lend, lend.id))
-    .innerJoin(entity, eq(lend.lender, entity.id))
-    .orderBy(desc(lendEntry.date))
-    .limit(30);
+  const [people, dues] = await Promise.all([listEntities(["customer", "supplier", "staff"]), getDues()]);
 
   const sections = [
     {
       kind: "loan" as const,
-      title: "Money the shop gave",
+      title: "Owed to the shop",
+      formTitle: "Plain loan",
       first: { value: "given", label: "Give a loan" },
       repay: "Repayment received",
-      accounts: given,
-      entries: givenEntries,
-      owes: "Owes the shop",
+      rows: dues.owed,
+      plain: "Loan",
+      owes: "Still to come",
+      empty: "Nobody owes the shop anything.",
     },
     {
       kind: "lend" as const,
-      title: "Money the shop took",
+      title: "Owed by the shop",
+      formTitle: "Plain borrowing",
       first: { value: "taken", label: "Borrow money" },
       repay: "Repay a borrowing",
-      accounts: taken,
-      entries: takenEntries,
-      owes: "Shop owes",
+      rows: dues.owing,
+      plain: "Borrowing",
+      owes: "Still to pay",
+      empty: "The shop owes nobody anything.",
     },
   ];
 
   return (
     <div className="space-y-8">
-      <PageHeader title="Loans" subtitle="Plain cash lent and borrowed, one running account per person. Bill dues are not counted here." />
+      <PageHeader title="Loans" subtitle="Everything owed to the shop and by it: plain loans and borrowings, and the unpaid part of bills, repairs and gold loans. Gold loan interest is not included." />
+
+      <Stats items={[
+        { name: "Owed to the shop", value: inr(total(dues.owed)), tone: "ok" },
+        { name: "Owed by the shop", value: inr(total(dues.owing)), tone: "bad" },
+      ]} />
 
       {sections.map((section) => (
         <div key={section.kind} className="space-y-4">
           <h2 className="font-serif text-[1.375rem] font-medium text-fg">{section.title}</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card title="New entry">
-              <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
-                <SelectField label="Entry" name="type" options={[section.first, { value: "repayment", label: section.repay }]} />
-                <EntityFields label="Person" entities={people} newLabel="Or a new person" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Rupees label="Amount (₹)" name="amt" required />
-                  <ModeField label="Cash or online" />
-                </div>
-                <DateField />
-              </ActionForm>
-            </Card>
-            <DataTable
-              head={["Person", section.owes]}
-              right={[1]}
-              empty="No accounts yet."
-              rows={section.accounts.map((account) => [
-                <span key="n" className="font-medium text-fg">{account.name}</span>,
-                inr(account.balance),
-              ])}
-            />
-          </div>
           <DataTable
-            head={["Time", "Person", "Entry", "Mode", "Amount"]}
-            right={[4]}
-            empty="No entries yet."
-            rows={section.entries.map(({ entry, name }) => [
-              <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
-              name,
-              <span key="e" className="capitalize">{entry.type}</span>,
-              entry.mode,
-              inr(entry.amt),
+            head={["Person", "Kind", "Date", "Details", "Amount", section.owes]}
+            right={[4, 5]}
+            empty={section.empty}
+            rows={section.rows.map((row) => [
+              <Link key="p" href={row.href} className={linkClass}>{row.party ?? "Unknown"}</Link>,
+              <StatusBadge key="k" tone={row.kind === section.plain ? "accent" : "neutral"}>{row.kind}</StatusBadge>,
+              <span key="d" className="whitespace-nowrap">{dateOnly(row.date)}</span>,
+              row.detail ?? "-",
+              inr(row.amt),
+              row.due > 0 ? <span key="o" className="font-medium text-fg">{inr(row.due)}</span> : <span key="o" className="text-fg-3">Settled</span>,
             ])}
           />
+          <Card title={section.formTitle} hint="Cash lent or borrowed with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line above.">
+            <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
+              <SelectField label="Entry" name="type" options={[section.first, { value: "repayment", label: section.repay }]} />
+              <EntityFields label="Person" entities={people} newLabel="Or a new person" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Rupees label="Amount (₹)" name="amt" required />
+                <ModeField label="Cash or online" />
+              </div>
+              <DateField />
+            </ActionForm>
+          </Card>
         </div>
       ))}
     </div>

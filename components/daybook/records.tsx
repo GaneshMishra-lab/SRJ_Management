@@ -156,7 +156,8 @@ function offersOfKind(kind: string): Offer[] {
   const metal = suffix === "silver" ? "silver" : "gold";
   const Metal = metal === "silver" ? "Silver" : "Gold";
   switch (family) {
-    case "sale": return [{ id: "newSale", form: "newSale", label: "newSale" }, { id: "salePayment", form: "salePayment", label: "salePayment" }];
+    case "sale": return [{ id: "newSale", form: "newSale", label: "newSale" }];
+    case "sale_due_received": return [{ id: "salePayment", form: "salePayment", label: "salePayment" }];
     case "order": return [
       { id: `newOrder.${metal}`, form: "newOrder", label: "newOrder", metal, preset: { metal: Metal, from: "daybook" } },
       { id: "orderAdvance", form: "orderAdvance", label: "orderAdvance" },

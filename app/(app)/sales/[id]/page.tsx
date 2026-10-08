@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { cashLedger } from "@/db/schema/ledger";
@@ -38,13 +38,15 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
       amt: itemSale.amt,
       stockId: itemStock.id,
       label: itemStock.label,
-      netWeight: itemStock.netWeight,
-      melting: itemStock.melting,
+      // A loose line has no stock piece and carries its own weight and melting.
+      netWeight: sql<number | null>`coalesce(${itemStock.netWeight}, ${itemSale.weight})`.mapWith(Number),
+      melting: sql<number | null>`coalesce(${itemStock.melting}, ${itemSale.melting})`.mapWith(Number),
       typeName: itemType.name,
+      looseTypeId: itemSale.itemType,
     })
     .from(itemSale)
     .leftJoin(itemStock, eq(itemSale.item, itemStock.id))
-    .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
+    .leftJoin(itemType, sql`${itemType.id} = coalesce(${itemStock.itemType}, ${itemSale.itemType})`)
     .where(eq(itemSale.bill, id))
     .orderBy(asc(itemType.name), asc(itemStock.label));
 
@@ -101,7 +103,7 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
             <thead>
               <tr>
                 <th className={`${thClass} border-t`}>Piece</th>
-                <th className={`${thClass} border-t text-right`}>Net weight</th>
+                <th className={`${thClass} border-t text-right`}>Weight</th>
                 <th className={`${thClass} border-t text-right`}>Rate /g</th>
                 <th className={`${thClass} border-t text-right`}>Metal</th>
                 <th className={`${thClass} border-t text-right`}>Making</th>
@@ -110,11 +112,13 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
-                <RowLink key={line.id} href={`/inventory/${line.stockId}`} className={rowClass}>
+              {lines.map((line) => {
+                const href = line.stockId ? `/inventory/${line.stockId}` : `/inventory/loose/${line.looseTypeId}`;
+                return (
+                <RowLink key={line.id} href={href} className={rowClass}>
                   <td className={tdClass}>
-                    <Link href={`/inventory/${line.stockId}`} className="font-medium text-fg">
-                      {line.typeName ?? "Piece"} #{line.label ?? "-"}
+                    <Link href={href} className="font-medium text-fg">
+                      {line.stockId ? `${line.typeName ?? "Piece"} #${line.label ?? "-"}` : `${line.typeName ?? "Loose metal"} · loose`}
                     </Link>
                     <span className="ml-2 text-fg-3">{line.melting ?? 0}%</span>
                   </td>
@@ -125,7 +129,8 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
                   <td className={`${tdClass} text-right tabular-nums`}>{inr(line.gst)}</td>
                   <td className={`${tdClass} text-right text-fg tabular-nums`}>{inr(line.amt)}</td>
                 </RowLink>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

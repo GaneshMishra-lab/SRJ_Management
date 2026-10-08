@@ -38,6 +38,9 @@ export const itemType =pgTable("item_type", {
   metal: text("metal"), // Gold, Silver
   desc: text("desc"),
   nextLabel: integer("next_label").default(1).notNull(),
+  // Sold loose by weight (mani), not as labelled pieces: its stock is in loose_stock_ledger.
+  loose: boolean("loose").default(false).notNull(),
+  piecesPerGram: integer("pieces_per_gram"), // 6 for 1x6; only used to show an approximate count
 });
 
 export const billPayment = pgTable("bill_payment", {
@@ -198,6 +201,28 @@ export const itemStock = pgTable(
   }),
 );
 
+// Loose metal (mani) is tracked by weight, per item type and melting. What is on hand is the ins
+// minus the outs; no balance is stored.
+export const looseStockLedger = pgTable(
+  "loose_stock_ledger",
+  {
+    ...auditTimestamps(),
+    id: uuid("id").defaultRandom().primaryKey(),
+    date: timestamp("date", { mode: "string" }),
+    itemType: uuid("item_type").notNull().references(() => itemType.id),
+    melting: pct("melting"),
+    direction: text("direction"), // in, out
+    weight: grams("weight"),
+    sourceTable: text("source_table"), // item_purchased, item_sale, sale_cancel, stock_check
+    sourceId: uuid("source_id"),
+    desc: text("desc"),
+  },
+  (table) => ({
+    // A purchased item is added to loose stock only once.
+    purchasedUnique: uniqueIndex("loose_stock_purchased_uq").on(table.sourceId).where(sql`${table.sourceTable} = 'item_purchased'`),
+  }),
+);
+
 export const itemApproval = pgTable("item_approval", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
@@ -253,6 +278,10 @@ export const itemSale =pgTable("item_sale", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   item: uuid("item").references(() => itemStock.id),
+  // A loose line has no stock piece; it carries the type, melting and weight sold instead.
+  itemType: uuid("item_type").references(() => itemType.id),
+  weight: grams("weight"),
+  melting: pct("melting"),
   bill: uuid("bill").references(() => itemSaleBill.id),
   rate: rupees("rate"), // purity rate used: daily rate × melting ÷ 100
   makingPct: pct("making_pct"), // wastage included

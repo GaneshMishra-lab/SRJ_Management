@@ -12,6 +12,7 @@ import { dueDateFrom, dueStatus } from "@/lib/due";
 import { round2 } from "@/lib/pricing";
 import { dateOnly, dateTime, grams, inr, istDate, istDayRange } from "@/lib/format";
 import { cashBalances, getCurrentRates } from "@/lib/ledger";
+import { looseBalances } from "@/lib/loose";
 import { btn, hintClass, inputClass, labelClass, linkClass } from "@/lib/styles";
 
 // "Good morning" by the shop's clock, not the server's.
@@ -39,6 +40,10 @@ export default async function Dashboard() {
     .groupBy(itemStock.metal);
   const gold = stock.find((row) => row.metal === "Gold");
   const silver = stock.find((row) => row.metal === "Silver");
+  // Loose metal (mani) is kept by weight, apart from the labelled pieces.
+  const loose = await looseBalances();
+  const looseGold = loose.filter((row) => row.metal === "Gold").reduce((sum, row) => sum + row.weight, 0);
+  const looseSilver = loose.filter((row) => row.metal === "Silver").reduce((sum, row) => sum + row.weight, 0);
 
   const [todaySales] = await db
     .select({
@@ -83,7 +88,7 @@ export default async function Dashboard() {
       <Stats items={[
         { name: "Cash in vault", value: inr(balances.vault), note: "By the cash ledger" },
         { name: "Bank balance", value: inr(balances.account), note: "By the cash ledger" },
-        { name: "Gold in stock", value: grams(gold?.weight), note: `${gold?.pieces ?? 0} pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}` },
+        { name: "Gold in stock", value: grams(gold?.weight), note: `${gold?.pieces ?? 0} pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}${looseGold || looseSilver ? ` · loose: gold ${grams(looseGold)}, silver ${grams(looseSilver)}` : ""}` },
         { name: "Today's sales", value: inr(todaySales?.total), note: `${todaySales?.bills ?? 0} ${todaySales?.bills === 1 ? "bill" : "bills"}` },
       ]} />
 

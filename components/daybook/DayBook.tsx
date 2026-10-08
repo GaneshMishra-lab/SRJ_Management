@@ -67,7 +67,8 @@ export function DayBook({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const typing = (event.target as HTMLElement).closest("input, select, textarea, dialog, [contenteditable]");
-      if (event.key.toLowerCase() === "n" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      // A browser filling in a field for the user sends a keydown that names no key.
+      if (event.key?.toLowerCase() === "n" && !typing && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
         setDialog((current) => current ?? {});
       }

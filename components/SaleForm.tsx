@@ -20,6 +20,17 @@ type Piece = {
   status: string | null;
 };
 type Line = { stockId: string; rate: number; makingPct: number };
+// Loose metal (mani) on hand: one choice per type and melting, sold by weight.
+type Loose = {
+  itemTypeId: string;
+  typeName: string | null;
+  metal: string | null;
+  piecesPerGram: number | null;
+  melting: number;
+  weight: number;
+};
+type LooseLine = { itemTypeId: string; melting: number; weight: number; rate: number; makingPct: number };
+const looseKey = (row: { itemTypeId: string; melting: number }) => `${row.itemTypeId}|${row.melting}`;
 type OldGold = { metal: string; weight: number; melting: number; amt: number };
 type ReadyOrder = {
   id: string;
@@ -33,6 +44,7 @@ type ReadyOrder = {
 export function SaleForm({
   customers,
   pieces,
+  loose = [],
   rates,
   orders,
   date,
@@ -41,6 +53,7 @@ export function SaleForm({
 }: {
   customers: Customer[];
   pieces: Piece[];
+  loose?: Loose[];
   rates: { Gold: number | null; Silver: number | null };
   orders: ReadyOrder[];
   // The bill's own day (YYYY-MM-DD) when the sale is entered later; today if left out.
@@ -60,6 +73,7 @@ export function SaleForm({
   const isNewCustomer = customerId === "new";
 
   const [lines, setLines] = useState<Line[]>([]);
+  const [looseLines, setLooseLines] = useState<LooseLine[]>([]);
   const [orderId, setOrderId] = useState("");
   const [oldGold, setOldGold] = useState<OldGold[]>([]);
   const [discount, setDiscount] = useState(0);
@@ -79,6 +93,19 @@ export function SaleForm({
     if (!piece) return;
     const fineRate = piece.metal === "Silver" ? rates.Silver : rates.Gold;
     setLines([...lines, { stockId, rate: purityRate(fineRate ?? 0, piece.melting ?? 0), makingPct: 0 }]);
+  };
+
+  const looseByKey = new Map(loose.map((row) => [looseKey(row), row]));
+  const looseName = (row: Loose) => `${row.typeName ?? "Loose"} · ${row.melting}%`;
+  const looseAvailable = loose.filter((row) => !looseLines.some((line) => looseKey(line) === looseKey(row)));
+  const addLoose = (key: string) => {
+    const row = looseByKey.get(key);
+    if (!row) return;
+    const fineRate = row.metal === "Silver" ? rates.Silver : rates.Gold;
+    setLooseLines([...looseLines, { itemTypeId: row.itemTypeId, melting: row.melting, weight: 0, rate: purityRate(fineRate ?? 0, row.melting), makingPct: 0 }]);
+  };
+  const updateLoose = (index: number, field: "weight" | "rate" | "makingPct", value: number) => {
+    setLooseLines(looseLines.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
   };
 
   // Delivering an order: bring in its customer and its piece, priced at the booked rate if there is one.
@@ -114,7 +141,11 @@ export function SaleForm({
     ...line,
     ...priceSaleLine({ netWeight: pieceById.get(line.stockId)?.netWeight ?? 0, rate: line.rate, makingPct: line.makingPct }),
   }));
-  const computedAmt = round2(priced.reduce((sum, line) => sum + line.amt, 0));
+  const pricedLoose = looseLines.map((line) => ({
+    ...line,
+    ...priceSaleLine({ netWeight: line.weight, rate: line.rate, makingPct: line.makingPct }),
+  }));
+  const computedAmt = round2([...priced, ...pricedLoose].reduce((sum, line) => sum + line.amt, 0));
   const totalAmt = round2(computedAmt - discount);
   const advance = order?.advance ?? 0;
   const oldGoldAmt = round2(oldGold.reduce((sum, old) => sum + old.amt, 0));
@@ -124,7 +155,7 @@ export function SaleForm({
     e.preventDefault();
     setError(null);
     if (!customerId) return setError("Choose a customer.");
-    if (lines.length === 0) return setError("Add at least one piece to the bill.");
+    if (lines.length === 0 && looseLines.length === 0) return setError("Add at least one piece or loose item to the bill.");
 
     setLoading(true);
     const res = await createSale({
@@ -134,6 +165,7 @@ export function SaleForm({
       newCustomer: isNewCustomer ? { name: newCustomerName, contact: newCustomerContact } : undefined,
       orderId: orderId || undefined,
       items: lines,
+      loose: looseLines,
       oldGold,
       discount,
       paidAmt,
@@ -274,6 +306,85 @@ export function SaleForm({
             </div>
           )}
         </Card>
+
+        {loose.length > 0 && (
+          <Card title="Loose metal" hint="Mani and other metal sold by weight, out of the stock of its type and melting.">
+            <SelectField label="Add loose metal" value="" onChange={(e) => addLoose(e.target.value)}>
+              <option value="">{looseAvailable.length === 0 ? "No more loose metal available" : "Select a type..."}</option>
+              {looseAvailable.map((row) => (
+                <option key={looseKey(row)} value={looseKey(row)}>
+                  {looseName(row)} · {row.metal} · {grams(row.weight)} in stock
+                </option>
+              ))}
+            </SelectField>
+
+            {pricedLoose.length > 0 && (
+              <div className="mt-2 divide-y divide-line">
+                {pricedLoose.map((line, index) => {
+                  const row = looseByKey.get(looseKey(line))!;
+                  return (
+                    <div key={looseKey(line)} className="space-y-3 py-5 last:pb-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-fg">{looseName(row)}</p>
+                          <p className="text-[13px] text-fg-3">
+                            {row.metal} · {grams(row.weight)} in stock
+                            {row.piecesPerGram && line.weight > 0 ? ` · about ${Math.round(line.weight * row.piecesPerGram)} pieces on this bill` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-serif text-lg font-medium text-fg tabular-nums">{inr(line.amt)}</p>
+                          <button
+                            type="button"
+                            onClick={() => setLooseLines(looseLines.filter((_, i) => i !== index))}
+                            aria-label={`Remove ${looseName(row)}`}
+                            title="Remove"
+                            className={`-my-1 ${iconButtonClass} hover:text-bad`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        <Field
+                          label="Weight (g)"
+                          type="number"
+                          step="0.001"
+                          min="0.001"
+                          max={row.weight}
+                          value={line.weight || ""}
+                          onChange={(e) => updateLoose(index, "weight", Number(e.target.value))}
+                          required
+                        />
+                        <Field
+                          label="Rate (₹/g at this purity)"
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={line.rate || ""}
+                          onChange={(e) => updateLoose(index, "rate", Number(e.target.value))}
+                          required
+                        />
+                        <Field
+                          label="Making % (with wastage)"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={line.makingPct || ""}
+                          onChange={(e) => updateLoose(index, "makingPct", Number(e.target.value))}
+                          placeholder="e.g. 12"
+                        />
+                      </div>
+                      <p className="text-[13px] text-fg-3 tabular-nums">
+                        Metal {inr(line.metalValue)} · Making {inr(line.makingAmt)} · GST {GST_PCT}% {inr(line.gst)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card
           title="Old metal in exchange"

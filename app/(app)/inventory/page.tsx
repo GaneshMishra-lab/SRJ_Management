@@ -1,6 +1,9 @@
 import { db } from "@/db";
-import { itemPurchased, itemStock, itemType } from "@/db/schema/sales";
-import { count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { miscCategory, miscItem } from "@/db/schema/entities";
+import { miscTrade } from "@/db/schema/ledger";
+import { itemPurchased, itemStock, itemType, looseStockLedger } from "@/db/schema/sales";
+import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { looseBalances, looseFromPurchase } from "@/lib/loose";
 import { InventoryManager } from "@/components/InventoryManager";
 import { getCurrentUser } from "@/lib/dal";
 
@@ -38,9 +41,28 @@ export default async function InventoryPage() {
     .select({ toLabel: count() })
     .from(itemPurchased)
     .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
-    .where(isNull(itemStock.id));
+    .leftJoin(looseStockLedger, looseFromPurchase)
+    .where(and(isNull(itemStock.id), isNull(looseStockLedger.id)));
+
+  // Loose metal (mani) on hand, by type and melting.
+  const loose = await looseBalances();
+
+  // Miscellaneous items are counted in pieces: what was bought minus what was sold.
+  const misc = await db
+    .select({
+      id: miscItem.id,
+      name: miscItem.name,
+      unit: miscItem.unit,
+      categoryName: miscCategory.name,
+      inHand: sql<number>`coalesce(sum(case when ${miscTrade.type} = 'purchase' then ${miscTrade.qty} when ${miscTrade.type} = 'sale' then -${miscTrade.qty} end), 0)`.mapWith(Number),
+    })
+    .from(miscItem)
+    .leftJoin(miscCategory, eq(miscItem.category, miscCategory.id))
+    .leftJoin(miscTrade, eq(miscTrade.item, miscItem.id))
+    .groupBy(miscItem.id, miscCategory.name)
+    .orderBy(asc(miscItem.name));
 
   return (
-    <InventoryManager itemTypes={itemTypes} inventory={inventory} toLabel={toLabel} />
+    <InventoryManager itemTypes={itemTypes} inventory={inventory} loose={loose} misc={misc} toLabel={toLabel} />
   );
 }

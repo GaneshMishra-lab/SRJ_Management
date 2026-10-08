@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { bill, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
+import { bill, itemPurchased, itemStock, itemType, looseStockLedger } from "@/db/schema/sales";
+import { looseFromPurchase } from "@/lib/loose";
 import { DataTable, linkClass, PageHeader } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { dateOnly, grams } from "@/lib/format";
@@ -17,6 +18,7 @@ export default async function LabelQueuePage() {
       netWeight: itemPurchased.netWeight,
       melting: itemPurchased.melting,
       typeName: itemType.name,
+      loose: itemType.loose,
       metal: bill.metal,
       billDate: bill.date,
       supplierName: entity.name,
@@ -26,7 +28,8 @@ export default async function LabelQueuePage() {
     .leftJoin(entity, eq(bill.supplier, entity.id))
     .leftJoin(itemType, eq(itemPurchased.itemType, itemType.id))
     .leftJoin(itemStock, eq(itemStock.item, itemPurchased.id))
-    .where(isNull(itemStock.id))
+    .leftJoin(looseStockLedger, looseFromPurchase)
+    .where(and(isNull(itemStock.id), isNull(looseStockLedger.id)))
     .orderBy(asc(bill.date), asc(itemPurchased.createdAt));
 
   return (
@@ -38,7 +41,7 @@ export default async function LabelQueuePage() {
         right={[4, 5]}
         empty="Nothing is waiting to be labelled."
         rows={items.map((item) => [
-          <Link key="i" href={`/inventory/label/${item.id}`} className={linkClass}>{item.typeName ?? "Item"}</Link>,
+          <Link key="i" href={`/inventory/label/${item.id}`} className={linkClass}>{item.typeName ?? "Item"}{item.loose ? " · loose" : ""}</Link>,
           item.metal,
           item.supplierName ?? "Unknown",
           dateOnly(item.billDate),
