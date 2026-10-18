@@ -3,7 +3,7 @@ import { and, asc, eq, gte, inArray, lt, or, sql, type AnyColumn } from "drizzle
 import { db } from "@/db";
 import { daybookEntry, daybookHead, daybookRule, daybookSettings } from "@/db/schema/daybook";
 import { entity, miscItem } from "@/db/schema/entities";
-import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
+import { bc, bcPayment, lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
 import { cashLedger, expense, miscTrade, miscTradePayment } from "@/db/schema/ledger";
 import {
   bill, billPayment, fineTrade, goldLoan, goldLoanPayment, itemOrder, itemOrderPayment, itemRepairing, itemRepairingPayment,
@@ -213,6 +213,15 @@ const lookups: Record<string, (ids: string[], day: string) => Promise<Found>> = 
       .where(inArray(goldLoanPayment.id, ids));
     return found(rows, (row) => ({ kind: "girvi_received", party: row.party, tag: row.type === "principal" ? "principal" : "interest", href: `/gold-loans/${row.loan}` }));
   },
+  bc_payment: async (ids) => {
+    const rows = await db
+      .select({ id: bcPayment.id, bc: bc.id, cardNo: bc.cardNo, party: entity.name })
+      .from(bcPayment)
+      .innerJoin(bc, eq(bcPayment.bc, bc.id))
+      .leftJoin(entity, eq(bc.customer, entity.id))
+      .where(inArray(bcPayment.id, ids));
+    return found(rows, (row) => ({ kind: "bc_instalment", party: row.party, note: row.cardNo ? `#${row.cardNo}` : null, href: `/bc/${row.bc}` }));
+  },
   loan_entry: async (ids) => {
     const rows = await db
       .select({ id: loanEntry.id, party: entity.name })
@@ -415,9 +424,10 @@ export async function getDay(day: string, heads: Head[]) {
     const sum = (rows: { amt: number | null }[]) => round2(rows.reduce((total, row) => total + (row.amt ?? 0), 0));
     const total = sale.totalAmt ?? 0;
     const advance = sum(sale.settled.filter((row) => row.mode === "order_advance"));
+    const fromBc = sum(sale.settled.filter((row) => row.mode === "bc"));
     const money = sale.settled.filter((row) => isMoney(row.mode));
-    const unsettled = round2(total - advance - sum(sale.old));
-    // What is not a piece's own (discount, advance, cancellation) is written under the head of the
+    const unsettled = round2(total - advance - fromBc - sum(sale.old));
+    // What is not a piece's own (discount, advance, BC, cancellation) is written under the head of the
     // metal most of the bill's value is in, should a bill ever mix the two.
     const value = (metal: string) => sum(sale.pieces.filter((piece) => piece.metal === metal));
     const billKind = `sale.${value("silver") > value("gold") ? "silver" : "gold"}`;
@@ -438,6 +448,8 @@ export async function getDay(day: string, heads: Head[]) {
       write("discount", billKind, "out", sale.discount ?? 0, { tag: "discount" });
       // An order's advance was written on the day it was taken.
       write("advance", billKind, "out", advance, { tag: "advance" });
+      // So were a BC's instalments, under the BC head.
+      write("bc", billKind, "out", fromBc, { tag: "bc" });
       // Old metal taken in exchange is old metal bought.
       for (const old of sale.old) write(old.id, `old.${metalOf(old.metal)}`, "out", old.amt ?? 0, { weight: old.weight, href: `/old-gold/${old.id}` });
       write("due", "sale_due", "out", round2(unsettled - sum(money.filter((row) => onDay(row.date, day)))));
@@ -445,7 +457,7 @@ export async function getDay(day: string, heads: Head[]) {
     // A cancelled bill is taken back off the page on the day it is cancelled: the sale, the old
     // metal handed back, and whatever the customer still had to pay.
     if (onDay(sale.cancelledAt, day)) {
-      write("cancelled", billKind, "out", round2(total - advance), { tag: "cancelled" });
+      write("cancelled", billKind, "out", round2(total - advance - fromBc), { tag: "cancelled" });
       for (const old of sale.old) write(`${old.id}:back`, `old.${metalOf(old.metal)}`, "in", old.amt ?? 0, { weight: old.weight, tag: "refund", href: `/old-gold/${old.id}` });
       write("due:cancelled", "sale_due", "in", round2(unsettled - sum(money)), { tag: "cancelled" });
     }

@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
+import { bc } from "@/db/schema/finance";
 import {
   itemApproval,
   itemOrder,
@@ -16,6 +17,7 @@ import {
   oldItem,
 } from "@/db/schema/sales";
 import { looseBalances, recordLoose } from "@/lib/loose";
+import { bcTotals } from "@/lib/bc";
 import { getCurrentUser, logAudit, requireOwner } from "@/lib/dal";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { dateOnly, istDate, parseDbDate } from "@/lib/format";
@@ -34,6 +36,8 @@ export type SalePayload = {
   loose?: Array<{ itemTypeId: string; melting: number; weight: number; rate: number; makingPct: number }>;
   // Old metal the customer gives in exchange, set against the bill.
   oldGold?: Array<{ metal: string; weight: number; melting: number; amt: number }>;
+  // Matured BCs of the customer spent on the bill, and how much of each.
+  bcs?: Array<{ bcId: string; amt: number }>;
   discount: number;
   paidAmt: number;
   mode: string;
@@ -47,6 +51,7 @@ function revalidateSales() {
   revalidatePath("/inventory");
   revalidatePath("/orders");
   revalidatePath("/old-gold");
+  revalidatePath("/bc");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");
@@ -92,6 +97,10 @@ export async function createSale(payload: SalePayload) {
       throw new UserError("Each old item needs a metal, weight, melting and agreed value.");
     }
     if (payload.orderId && !isUuid(payload.orderId)) throw new UserError("Order not found.");
+    const bcs = (payload.bcs ?? []).map((use) => ({ bcId: use.bcId, amt: round2(use.amt) })).filter((use) => use.amt !== 0);
+    if (bcs.some((use) => !isUuid(use.bcId) || !(use.amt > 0)) || new Set(bcs.map((use) => use.bcId)).size !== bcs.length) {
+      throw new UserError("A BC on this bill is not valid.");
+    }
     // The bill, old metal taken in and any payment made with it all carry the bill's own date.
     const date = entryDate(payload.date, payload.time);
     const paidOn = payload.paymentDate ? entryDate(payload.paymentDate) : date;
@@ -192,9 +201,19 @@ export async function createSale(payload: SalePayload) {
       if (discount > computedAmt) throw new UserError("Discount is more than the bill amount.");
       const totalAmt = round2(computedAmt - discount);
       const oldGoldAmt = round2(oldGold.reduce((sum, old) => sum + old.amt, 0));
-      const settled = round2(advance + oldGoldAmt + paidAmt);
+      // A BC must be this customer's, matured, and have enough left on it. Locked, so two bills
+      // cannot spend the same balance.
+      for (const use of bcs) {
+        const [row] = await tx.select().from(bc).where(eq(bc.id, use.bcId)).for("update");
+        if (!row || row.customer !== customerId) throw new UserError("That BC is not this customer's.");
+        if (!row.maturedAt) throw new UserError("That BC has not matured yet.");
+        const { spent } = await bcTotals(tx, use.bcId);
+        if (use.amt > round2((row.value ?? 0) - spent)) throw new UserError("That is more than is left on the BC.");
+      }
+      const bcAmt = round2(bcs.reduce((sum, use) => sum + use.amt, 0));
+      const settled = round2(advance + oldGoldAmt + bcAmt + paidAmt);
       if (settled > totalAmt) {
-        throw new UserError("Advance, old metal and payment together come to more than the bill total. Buy the old metal separately or lower the payment.");
+        throw new UserError("Advance, old metal, BC and payment together come to more than the bill total. Buy the old metal separately or lower the payment.");
       }
 
       const [saleBill] = await tx.insert(itemSaleBill).values({
@@ -218,9 +237,13 @@ export async function createSale(payload: SalePayload) {
         }
       }
 
-      // Neither of these moves cash: the advance was recorded when taken, old metal is an exchange.
+      // None of these moves cash: the advance and the BC's instalments were recorded when taken,
+      // old metal is an exchange.
       if (advance > 0) {
         await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: advance, mode: "order_advance" });
+      }
+      for (const use of bcs) {
+        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: use.amt, mode: "bc", bc: use.bcId });
       }
       for (const old of oldGold) {
         const [row] = await tx.insert(oldItem).values({
@@ -253,7 +276,7 @@ export async function createSale(payload: SalePayload) {
         tableName: "item_sale_bill",
         recordId: saleBill.id,
         action: "insert",
-        newValues: { ...saleBill, lines, looseLines, advance, oldGold },
+        newValues: { ...saleBill, lines, looseLines, advance, oldGold, bcs },
       });
       return saleBill.id;
     });
@@ -444,6 +467,8 @@ export async function cancelSale(saleId: string, _prev: FormState, formData: For
           cancelledAt: date, cancelReason: reason, reversed, piecesBackInStock: stockIds,
           looseBackInStock: looseBack.map((line) => ({ itemType: line.itemType, melting: line.melting, weight: line.weight })),
           oldMetalReturned: exchanged.map((old) => old.id), orderReopened: saleBill.order,
+          // What was spent from a BC is on it again: its balance counts only bills not cancelled.
+          bcReturned: payments.filter((payment) => payment.mode === "bc").map((payment) => ({ bc: payment.bc, amt: payment.amtPaid })),
         },
       });
     });

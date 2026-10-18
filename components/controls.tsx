@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X } from "lucide-react";
+import { Search, Trash2, X } from "lucide-react";
+import type { FormState } from "@/lib/form";
+import { iconButtonClass } from "@/lib/styles";
 
 // The interactive building blocks: the ones that need the browser.
 
@@ -20,6 +22,19 @@ export function RowLink({ href, className = "", children }: { href: string; clas
     >
       {children}
     </tr>
+  );
+}
+
+// A bin button for one row of a table, asking first. Shows the action's error beside it.
+export function RemoveButton({ action, label }: { action: (prev: FormState, formData: FormData) => Promise<FormState>; label: string }) {
+  const [state, formAction, pending] = useActionState(action, undefined);
+  return (
+    <form action={formAction} onSubmit={(event) => { if (!window.confirm(`${label}?`)) event.preventDefault(); }} className="inline-flex items-center justify-end gap-2">
+      {state?.error && <span role="alert" className="text-[13px] whitespace-normal text-bad">{state.error}</span>}
+      <button type="submit" disabled={pending} aria-label={label} title={label} className={`-my-2 ${iconButtonClass} hover:text-bad`}>
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </form>
   );
 }
 

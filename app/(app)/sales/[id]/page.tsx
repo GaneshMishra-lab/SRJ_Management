@@ -79,7 +79,7 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
       {cancelled && (
         <Notice tone="bad" title={`Cancelled on ${dateOnly(b.cancelledAt)}`}>
           <p>Reason: {b.cancelReason}</p>
-          <p>The pieces are back in stock and nothing is owed on this bill.</p>
+          <p>The pieces are back in stock and nothing is owed on this bill.{payments.some((payment) => payment.mode === "bc") ? " What was taken from a BC is on the BC again." : ""}</p>
           {reversals.map((entry) => (
             <p key={entry.id}>{inr(entry.amt)} reversed out of the {entry.location === "vault" ? "vault" : "bank account"} on {dateOnly(entry.date)}.</p>
           ))}
@@ -145,7 +145,9 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
               {payments.map((payment) => (
                 <li key={payment.id} className="flex items-center justify-between gap-4 border-t border-line px-5 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm text-fg capitalize">{payment.mode?.replace("_", " ")}</p>
+                    {payment.mode === "bc" && payment.bc
+                      ? <Link href={`/bc/${payment.bc}`} className={`text-sm ${linkClass}`}>From BC</Link>
+                      : <p className="text-sm text-fg capitalize">{payment.mode?.replace("_", " ")}</p>}
                     <p className="text-[13px] text-fg-3">{dateTime(payment.date)}</p>
                   </div>
                   <span className="shrink-0 text-sm text-fg tabular-nums">{inr(payment.amtPaid)}</span>

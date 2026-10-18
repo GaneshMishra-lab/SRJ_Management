@@ -4,6 +4,7 @@ import { useId } from "react";
 import type { FormLists } from "@/app/actions/daybook-forms";
 import { addGoldLoanPayment, createGoldLoan } from "@/app/actions/goldloans";
 import { addExpense, deleteExpense, deleteTransfer, editExpense, editTransfer, transferCash } from "@/app/actions/ledger";
+import { addBcPayment } from "@/app/actions/bc";
 import { addLoanEntry } from "@/app/actions/loans";
 import { sellLangdi, tradeBullion } from "@/app/actions/metal";
 import { addMiscTrade, payMiscTrade } from "@/app/actions/misc";
@@ -127,6 +128,7 @@ const FORMS = {
     ],
     run: (data) => createOrder(undefined, data),
   },
+  bcInstalment: { fields: [pick("bc", "bc", "bcs"), rupees("amt", "amount"), mode], run: (data, values) => addBcPayment(values.bc, undefined, data) },
   repairPayment: { fields: [pick("repair", "repair", "repairs"), rupees("amt", "amount"), mode], run: (data, values) => addRepairPayment(values.repair, undefined, data) },
   billPayment: { fields: [pick("bill", "supplierBill", "bills"), rupees("amt", "amount"), mode], run: (data, values) => addBillPayment(values.bill, undefined, data) },
 } satisfies Record<string, Form>;
@@ -174,6 +176,7 @@ function offersOfKind(kind: string): Offer[] {
       { id: `billPayment.${metal}`, form: "billPayment", label: "billPayment", metal },
     ];
     case "repair": return [{ id: "repairPayment", form: "repairPayment", label: "repairPayment" }];
+    case "bc_instalment": return [{ id: "bcInstalment", form: "bcInstalment", label: "bcInstalment" }];
     case "misc_sale": return [{ id: "miscSale", form: "misc", label: "miscSale", preset: { type: "sale" } }];
     case "misc_purchase": return [
       { id: "miscPurchase", form: "miscPurchase", label: "miscPurchase", preset: { type: "purchase" } },

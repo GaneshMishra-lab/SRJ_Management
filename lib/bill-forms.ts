@@ -3,6 +3,7 @@ import { asc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { itemOrder, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
+import { listBcs } from "@/lib/bc";
 import { getCurrentRates } from "@/lib/ledger";
 import { looseBalances } from "@/lib/loose";
 
@@ -54,9 +55,22 @@ export async function saleFormData(day: string) {
   // Loose metal (mani) that can be sold by weight: one choice per type and melting on hand.
   const loose = (await looseBalances()).filter((row) => row.weight > 0);
 
+  // Every BC not yet used up: a matured one is spent on the bill, a running one is shown so the
+  // counter can tell the customer when it matures.
+  const bcs = (await listBcs()).filter((row) => row.status !== "used").map((row) => ({
+    id: row.id,
+    customerId: row.customer,
+    cardNo: row.cardNo,
+    balance: row.balance,
+    matured: row.status === "ready",
+    maturesOn: row.maturesOn,
+    monthsPaid: row.monthsPaid,
+    months: row.months,
+  }));
+
   // A sale written up later is billed at its own day's rates.
   const rates = await getCurrentRates(day);
-  return { customers, pieces, loose, orders, rates };
+  return { customers, pieces, loose, orders, bcs, rates };
 }
 
 export async function purchaseFormData() {

@@ -5,7 +5,7 @@ export type Digits = "deva" | "latn";
 export type PayMode = "cash" | "upi" | "cheque" | "bank" | "online";
 
 // A word the book adds to an entry made elsewhere in the app, written in the reader's language.
-export type Tag = "interest" | "principal" | "refund" | "deposit" | "withdrawal" | "adjustment" | "discount" | "advance" | "cancelled";
+export type Tag = "interest" | "principal" | "refund" | "deposit" | "withdrawal" | "adjustment" | "discount" | "advance" | "bc" | "cancelled";
 
 // A field a head asks for beyond the common ones, such as the item pledged under गिरवी.
 export type ExtraField = { key: string; labelMr: string; labelEn: string; type: "text" | "number"; required?: boolean };

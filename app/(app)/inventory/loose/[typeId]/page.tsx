@@ -16,6 +16,7 @@ const causes: Record<string, string> = {
   item_sale: "Sale",
   sale_cancel: "Sale cancelled",
   stock_check: "Stock check",
+  opening: "Opening stock",
 };
 
 // One loose type (a kind of mani): what is on hand by melting, and every movement in and out.

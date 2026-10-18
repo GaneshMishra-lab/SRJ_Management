@@ -104,7 +104,11 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
   const returnDue = supplierRet ? round2((supplierRet.ret.amt ?? 0) - supplierRet.settled) : 0;
 
   const timeline: { when: string | null; text: React.ReactNode }[] = [];
-  if (piece.purchase) {
+  // A piece already in the shop when the books were opened has a purchased item but no bill behind it.
+  const opening = Boolean(piece.purchase) && !piece.billId;
+  if (opening) {
+    timeline.push({ when: s.date, text: "In stock when the books were opened" });
+  } else if (piece.purchase) {
     timeline.push({
       when: piece.billDate,
       text: <>Bought from {piece.supplierName ?? "supplier"} for {inr(piece.purchase.amt)} (<Link href={`/purchases/${piece.billId}`} className={linkClass}>bill</Link>)</>,
@@ -139,7 +143,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
       <PageHeader
         back={{ href: "/inventory", label: "Inventory" }}
         title={<>{piece.typeName ?? "Piece"} #{s.label ?? "-"}{status && <StatusBadge tone={status.tone}>{status.label}</StatusBadge>}</>}
-        subtitle={piece.purchase ? `Bought from ${piece.supplierName ?? "a supplier"}` : "Refurbished from old metal"}
+        subtitle={opening ? "Opening stock" : piece.purchase ? `Bought from ${piece.supplierName ?? "a supplier"}` : "Refurbished from old metal"}
       />
 
       <Stats items={[
@@ -183,7 +187,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
             </ActionForm>
           </Card>
 
-          {piece.purchase && (
+          {piece.purchase && !opening && (
             <Card title="Return to supplier" hint="The purchase bill stays as it is; the return is settled separately.">
               <ActionForm action={returnToSupplier.bind(null, id)} submitLabel="Return piece">
                 <Rupees label="Value taken back (₹)" name="amt" defaultValue={piece.purchase.amt ?? undefined} required />

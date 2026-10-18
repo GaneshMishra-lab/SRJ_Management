@@ -27,6 +27,8 @@ export const KINDS: Kind[] = [
   { key: "misc_sale", labelMr: "इतर वस्तू विक्री", labelEn: "Misc item sold", head: credit("Panchurani Pethe") },
   { key: "girvi_received", labelMr: "गिरवी व्याज / मुद्दल जमा", labelEn: "Gold loan interest / principal received", head: credit("Girvi (Pledge)") },
   { key: "loan_repaid", labelMr: "उधारी परत आली", labelEn: "Loan repayment received", head: credit("Udhari (Credit)") },
+  // A BC's monthly instalment. Spending the BC on a bill later is a minus line under the sale head.
+  { key: "bc_instalment", labelMr: "बीसीचा हप्ता", labelEn: "BC instalment", head: credit("BC Pethe") },
   { key: "borrow_taken", labelMr: "दुकानाने घेतलेले कर्ज", labelEn: "Money the shop borrowed", head: credit("Savkari (Moneylending)") },
   { key: "borrow_repaid", labelMr: "दुकानाने कर्ज फेडले", labelEn: "Borrowing repaid by the shop", head: credit("Savkari (Moneylending)") },
   // Old metal that was bought, melted and sold on: the selling side of the old-metal head.

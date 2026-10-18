@@ -16,6 +16,7 @@ import {
 import { sql } from "drizzle-orm";
 
 import { entity } from "./entities";
+import { bc } from "./finance";
 
 export const bill = pgTable("bill", {
   ...auditTimestamps(),
@@ -297,7 +298,8 @@ export const itemSaleDetails = pgTable("item_sale_details", {
   sale: uuid("sale").references(() => itemSaleBill.id),
   date: timestamp("date", { mode: "string" }),
   amtPaid: rupees("amt_paid"),
-  mode: text("mode"), // cash, online, old_item, order_advance
+  mode: text("mode"), // cash, online, old_item, order_advance, bc
+  bc: uuid("bc").references(() => bc.id), // the BC spent, for mode bc
 });
 
 export const itemRepairing = pgTable("item_repairing", {

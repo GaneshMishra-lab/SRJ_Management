@@ -3,6 +3,7 @@
 import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity, miscItem } from "@/db/schema/entities";
+import { listBcs } from "@/lib/bc";
 import { miscTrade } from "@/db/schema/ledger";
 import { bill, goldLoan, itemOrder, itemRepairing, itemSaleBill } from "@/db/schema/sales";
 import { purchaseFormData, saleFormData } from "@/lib/bill-forms";
@@ -24,6 +25,7 @@ export type FormLists = {
   repairs: Choice[];
   items: Choice[];
   miscDue: Choice[]; // misc purchases bought on credit and not yet paid for
+  bcs: Choice[]; // BCs still taking instalments
 };
 
 const due = (total: number | null, paid: number | null) => round2((total ?? 0) - (paid ?? 0));
@@ -45,7 +47,7 @@ export async function loadPurchaseForm() {
 export async function loadFormLists(): Promise<FormLists> {
   await getCurrentUser();
 
-  const [people, loans, sales, bills, orders, repairs, items, miscDue] = await Promise.all([
+  const [people, loans, sales, bills, orders, repairs, items, miscDue, bcs] = await Promise.all([
     db.select({ id: entity.id, name: entity.name, type: entity.type }).from(entity).orderBy(asc(entity.name)),
     db.select({ loan: goldLoan, name: entity.name })
       .from(goldLoan)
@@ -79,6 +81,7 @@ export async function loadFormLists(): Promise<FormLists> {
       .leftJoin(entity, eq(miscTrade.entity, entity.id))
       .where(and(eq(miscTrade.type, "purchase"), sql`coalesce(${miscTrade.amt}, 0) > coalesce(${miscTrade.paidAmt}, 0)`))
       .orderBy(desc(miscTrade.date)),
+    listBcs(),
   ]);
 
   return {
@@ -94,5 +97,8 @@ export async function loadFormLists(): Promise<FormLists> {
     repairs: repairs.map(({ repair, name }) => ({ id: repair.id, label: parts(name, repair.desc, inr(due(repair.amt, repair.paidAmt))) })),
     items: items.map((item) => ({ id: item.id, label: parts(item.name, item.unit) })),
     miscDue: miscDue.map(({ trade, item, name }) => ({ id: trade.id, label: parts(name, item, dateOnly(trade.date), inr(due(trade.amt, trade.paidAmt))) })),
+    bcs: bcs
+      .filter((row) => !row.maturedAt && row.left > 0)
+      .map((row) => ({ id: row.id, label: parts(row.name, row.cardNo ? `#${row.cardNo}` : null, `${inr(row.instalment)} × ${row.months}`, `${row.monthsPaid}/${row.months}`) })),
   };
 }

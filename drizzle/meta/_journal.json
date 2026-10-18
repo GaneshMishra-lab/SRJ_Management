@@ -64,6 +64,13 @@
       "when": 1791460296824,
       "tag": "0008_loose_stock",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792049278646,
+      "tag": "0009_bc_scheme",
+      "breakpoints": true
     }
   ]
 }

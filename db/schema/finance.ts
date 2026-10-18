@@ -1,4 +1,4 @@
-import { auditTimestamps, pgTable, pgView, rupees, text, timestamp, uuid } from "./shared";
+import { auditTimestamps, date, integer, pct, pgTable, pgView, rupees, text, timestamp, uuid } from "./shared";
 import { sql } from "drizzle-orm";
 
 import { entity } from "./entities";
@@ -35,6 +35,34 @@ export const lendEntry = pgTable("lend_entry", {
   type: text("type"), // taken, repayment
   amt: rupees("amt"),
   mode: text("mode"),
+});
+
+// BC: a customer pays the same instalment every month for a term. Once the term has run, the shop
+// fixes what the BC is worth (what was paid, plus the bonus if the shop allows it) and the customer
+// spends that on sale bills; what is left after a bill stays on the BC. It cannot be used before.
+export const bc = pgTable("bc", {
+  ...auditTimestamps(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  customer: uuid("customer").notNull().references(() => entity.id),
+  cardNo: text("card_no"), // the number on the customer's card or in the BC book
+  startDate: date("start_date", { mode: "string" }).notNull(), // the first instalment falls due on it
+  instalment: rupees("instalment").notNull(),
+  months: integer("months").notNull(),
+  multiplier: pct("multiplier").notNull(), // a fully paid BC is worth this many instalments: 13.5 for 12 months
+  // Set when the BC is matured. bonus is 0 when the shop did not allow it; value is paid + bonus.
+  maturedAt: timestamp("matured_at", { mode: "string" }),
+  bonus: rupees("bonus"),
+  value: rupees("value"),
+  note: text("note"),
+});
+
+export const bcPayment = pgTable("bc_payment", {
+  ...auditTimestamps(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  bc: uuid("bc").notNull().references(() => bc.id),
+  date: timestamp("date", { mode: "string" }),
+  amt: rupees("amt"),
+  mode: text("mode"), // cash, online; opening for what was paid before the app was used
 });
 
 // Per-entity dues, one column per source. The first five are owed to the shop,

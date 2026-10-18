@@ -40,6 +40,17 @@ type ReadyOrder = {
   advance: number;
   bookedRate: number | null;
 };
+// A customer's BC: a matured one has a balance to spend on the bill; a running one is only shown.
+type Bc = {
+  id: string;
+  customerId: string;
+  cardNo: string | null;
+  balance: number;
+  matured: boolean;
+  maturesOn: string;
+  monthsPaid: number;
+  months: number;
+};
 
 export function SaleForm({
   customers,
@@ -47,6 +58,7 @@ export function SaleForm({
   loose = [],
   rates,
   orders,
+  bcs = [],
   date,
   onSaved,
   onCancel,
@@ -56,6 +68,7 @@ export function SaleForm({
   loose?: Loose[];
   rates: { Gold: number | null; Silver: number | null };
   orders: ReadyOrder[];
+  bcs?: Bc[];
   // The bill's own day (YYYY-MM-DD) when the sale is entered later; today if left out.
   date?: string;
   // Given when the form is shown inside another screen (the day book's popup), which then
@@ -76,6 +89,7 @@ export function SaleForm({
   const [looseLines, setLooseLines] = useState<LooseLine[]>([]);
   const [orderId, setOrderId] = useState("");
   const [oldGold, setOldGold] = useState<OldGold[]>([]);
+  const [bcUse, setBcUse] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState(0);
   const [paidAmt, setPaidAmt] = useState(0);
   const [mode, setMode] = useState("cash");
@@ -149,7 +163,12 @@ export function SaleForm({
   const totalAmt = round2(computedAmt - discount);
   const advance = order?.advance ?? 0;
   const oldGoldAmt = round2(oldGold.reduce((sum, old) => sum + old.amt, 0));
-  const balanceDue = round2(totalAmt - advance - oldGoldAmt - paidAmt);
+  // Only the chosen customer's BCs count, should the customer be changed after one was used.
+  const customerBcs = bcs.filter((row) => row.customerId === customerId);
+  const readyBcs = customerBcs.filter((row) => row.matured);
+  const bcUsed = readyBcs.map((row) => ({ bcId: row.id, amt: bcUse[row.id] ?? 0 })).filter((use) => use.amt > 0);
+  const bcAmt = round2(bcUsed.reduce((sum, use) => sum + use.amt, 0));
+  const balanceDue = round2(totalAmt - advance - oldGoldAmt - bcAmt - paidAmt);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -167,6 +186,7 @@ export function SaleForm({
       items: lines,
       loose: looseLines,
       oldGold,
+      bcs: bcUsed,
       discount,
       paidAmt,
       mode,
@@ -182,7 +202,9 @@ export function SaleForm({
     }
   };
 
-  const toPay = Math.max(0, round2(totalAmt - advance - oldGoldAmt));
+  // What is left for a BC to cover, before what this BC itself covers; then what is left for money.
+  const forBc = (id: string) => Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt + (bcUse[id] ?? 0)));
+  const toPay = Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt));
 
   // The bill on the left; what it comes to stays in view on the right while the pieces are added.
   return (
@@ -435,6 +457,38 @@ export function SaleForm({
               value={discount || ""}
               onChange={(e) => setDiscount(Number(e.target.value))}
             />
+            {customerBcs.map((row) => {
+              const name = `BC${row.cardNo ? ` card ${row.cardNo}` : ""}`;
+              if (!row.matured) {
+                return (
+                  <Notice key={row.id} tone="info">
+                    {name}: {row.monthsPaid} of {row.months} instalments paid. It can be used from {dateOnly(row.maturesOn)}.{" "}
+                    <a href={`/bc/${row.id}`} target="_blank" rel="noreferrer" className={linkClass}>Open</a>
+                  </Notice>
+                );
+              }
+              const most = Math.min(row.balance, forBc(row.id));
+              return (
+                <Field
+                  key={row.id}
+                  label={`From ${name} (₹)`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={most}
+                  value={bcUse[row.id] || ""}
+                  onChange={(e) => setBcUse({ ...bcUse, [row.id]: Number(e.target.value) })}
+                  hint={
+                    <>
+                      {inr(row.balance)} left on it.{" "}
+                      {most > 0 && (bcUse[row.id] ?? 0) !== most && (
+                        <button type="button" onClick={() => setBcUse({ ...bcUse, [row.id]: most })} className={linkClass}>Use {inr(most)}</button>
+                      )}
+                    </>
+                  }
+                />
+              );
+            })}
             <Field
               label="Amount paid now (₹)"
               type="number"
@@ -472,6 +526,7 @@ export function SaleForm({
               <SummaryRow label="Bill total" value={inr(totalAmt)} strong />
               {advance > 0 && <SummaryRow label="Order advance" value={inr(advance)} tone="ok" />}
               {oldGoldAmt > 0 && <SummaryRow label="Old metal" value={inr(oldGoldAmt)} tone="ok" />}
+              {bcAmt > 0 && <SummaryRow label="From BC" value={inr(bcAmt)} tone="ok" />}
               <SummaryRow label="Paid now" value={inr(paidAmt)} tone="ok" />
               <SummaryRow label="Balance due" value={inr(Math.max(0, balanceDue))} tone={balanceDue > 0 ? "accent" : undefined} />
             </dl>
