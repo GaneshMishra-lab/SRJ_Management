@@ -25,6 +25,8 @@
   --accent: #c6613f;
   --accent-hover: #ad5131;
   --accent-fg: #ffffff;
+  --gold: #8a6420; /* the landing page: gold for ornaments and small labels */
+  --gold-soft: #f3ead6;
   --focus: #2c84db;
   --ok: #2e7d50;
   --warn: #96650a;
@@ -54,6 +56,8 @@
     --accent: #d97757;
     --accent-hover: #e38d70;
     --accent-fg: #ffffff;
+    --gold: #dcb76e;
+    --gold-soft: #37301f;
     --focus: #5aa2ea;
     --ok: #74c293;
     --warn: #e2b25a;
@@ -83,6 +87,8 @@
   --accent: #d97757;
   --accent-hover: #e38d70;
   --accent-fg: #ffffff;
+  --gold: #dcb76e;
+  --gold-soft: #37301f;
   --focus: #5aa2ea;
   --ok: #74c293;
   --warn: #e2b25a;
@@ -110,6 +116,8 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
   --color-focus: var(--focus);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
