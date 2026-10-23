@@ -5,8 +5,12 @@
   accent that is used sparingly. Light is the base; dark applies when the device asks for it
   (unless the user picked light) or when the user picked dark. The choice is the data-theme
   attribute on <html>, set from a cookie.
+
+  Customer-facing pages set data-theme on their own wrapper instead (light unless the visitor
+  picked dark), so the same tokens are also defined on any element that carries the attribute.
 */
-:root {
+:root,
+[data-theme="light"] {
   color-scheme: light;
   --page: #faf9f5; /* the app background */
   --sidebar: #f5f4ed;
@@ -25,8 +29,13 @@
   --accent: #c6613f;
   --accent-hover: #ad5131;
   --accent-fg: #ffffff;
-  --gold: #8a6420; /* the landing page: gold for ornaments and small labels */
-  --gold-soft: #f3ead6;
+  /* Customer-facing pages take their colours from the shop logo: ruby red and saffron. */
+  --brand: #c72d30; /* fills: buttons, the logo red */
+  --brand-strong: #a91f28;
+  --brand-ink: #b3262b; /* red for text and icons, readable on the page */
+  --brand-deep: #8c1c22; /* the maroon band */
+  --saffron: #ff9c02; /* decoration only, too light for text on ivory */
+  --brand-soft: #fbefdc; /* warm panels behind drawings */
   --focus: #2c84db;
   --ok: #2e7d50;
   --warn: #96650a;
@@ -56,8 +65,12 @@
     --accent: #d97757;
     --accent-hover: #e38d70;
     --accent-fg: #ffffff;
-    --gold: #dcb76e;
-    --gold-soft: #37301f;
+    --brand: #c72d30;
+    --brand-strong: #b02529;
+    --brand-ink: #f2837c;
+    --brand-deep: #4d1418;
+    --saffron: #ffad33;
+    --brand-soft: #36261a;
     --focus: #5aa2ea;
     --ok: #74c293;
     --warn: #e2b25a;
@@ -68,7 +81,7 @@
   }
 }
 
-:root[data-theme="dark"] {
+[data-theme="dark"] {
   color-scheme: dark;
   --page: #262624;
   --sidebar: #1f1e1d;
@@ -87,8 +100,12 @@
   --accent: #d97757;
   --accent-hover: #e38d70;
   --accent-fg: #ffffff;
-  --gold: #dcb76e;
-  --gold-soft: #37301f;
+  --brand: #c72d30;
+  --brand-strong: #b02529;
+  --brand-ink: #f2837c;
+  --brand-deep: #4d1418;
+  --saffron: #ffad33;
+  --brand-soft: #36261a;
   --focus: #5aa2ea;
   --ok: #74c293;
   --warn: #e2b25a;
@@ -116,8 +133,12 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
-  --color-gold: var(--gold);
-  --color-gold-soft: var(--gold-soft);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-deep: var(--brand-deep);
+  --color-saffron: var(--saffron);
+  --color-brand-soft: var(--brand-soft);
   --color-focus: var(--focus);
   --color-ok: var(--ok);
   --color-warn: var(--warn);

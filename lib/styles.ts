@@ -20,6 +20,8 @@ const buttonBase =
 const buttonVariants = {
   primary: "bg-primary text-primary-fg hover:bg-primary-hover",
   accent: "bg-accent text-accent-fg hover:bg-accent-hover",
+  brand: "bg-brand text-white hover:bg-brand-strong", // the logo red, for customer-facing pages
+
   secondary: "border border-line-strong bg-card text-fg hover:bg-fg/5",
   ghost: "text-fg-2 hover:bg-fg/5 hover:text-fg",
   danger: "bg-bad text-white hover:opacity-90",
