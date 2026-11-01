@@ -1,11 +1,14 @@
 import "server-only";
-import { asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { itemOrder, itemPurchased, itemStock, itemType } from "@/db/schema/sales";
+import { lend, lendEntry } from "@/db/schema/finance";
+import { itemOrder, itemPurchased, itemSaleBill, itemStock, itemType } from "@/db/schema/sales";
 import { listBcs } from "@/lib/bc";
+import { balanceOf } from "@/lib/dues";
 import { getCurrentRates } from "@/lib/ledger";
 import { looseBalances } from "@/lib/loose";
+import { round2 } from "@/lib/pricing";
 
 // What the sale and purchase bill forms choose from. Read here once, for the two places each
 // form is shown: its own page, and the day book's popup.
@@ -68,9 +71,24 @@ export async function saleFormData(day: string) {
     months: row.months,
   }));
 
+  // Money the shop holds for each customer (their सावकारी account), which a bill can be paid out
+  // of, and what each still owes on earlier bills, which a payment beyond the bill goes to.
+  const [heldRows, owedRows] = await Promise.all([
+    db.select({ customerId: lend.lender, amt: balanceOf(lendEntry.amt, lendEntry.type) })
+      .from(lend)
+      .innerJoin(lendEntry, eq(lendEntry.lend, lend.id))
+      .groupBy(lend.lender),
+    db.select({ customerId: itemSaleBill.customer, amt: sql<number>`sum(coalesce(${itemSaleBill.totalAmt}, 0) - coalesce(${itemSaleBill.paidAmt}, 0))`.mapWith(Number) })
+      .from(itemSaleBill)
+      .where(and(isNull(itemSaleBill.cancelledAt), sql`coalesce(${itemSaleBill.totalAmt}, 0) > coalesce(${itemSaleBill.paidAmt}, 0)`))
+      .groupBy(itemSaleBill.customer),
+  ]);
+  const owing = (rows: { customerId: string | null; amt: number }[]) =>
+    rows.flatMap((row) => (row.customerId && row.amt > 0 ? [{ customerId: row.customerId, amt: round2(row.amt) }] : []));
+
   // A sale written up later is billed at its own day's rates.
   const rates = await getCurrentRates(day);
-  return { customers, pieces, loose, orders, bcs, rates };
+  return { customers, pieces, loose, orders, bcs, held: owing(heldRows), udhari: owing(owedRows), rates };
 }
 
 export async function purchaseFormData() {

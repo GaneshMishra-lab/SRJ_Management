@@ -4,7 +4,7 @@ import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { bc } from "@/db/schema/finance";
+import { bc, lendEntry } from "@/db/schema/finance";
 import {
   itemApproval,
   itemOrder,
@@ -20,9 +20,10 @@ import { looseBalances, recordLoose } from "@/lib/loose";
 import { bcTotals } from "@/lib/bc";
 import { getCurrentUser, logAudit, requireOwner } from "@/lib/dal";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
-import { dateOnly, istDate, parseDbDate } from "@/lib/format";
+import { dateOnly, inr, istDate, parseDbDate } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { priceSaleLine, purityRate, round2, round3 } from "@/lib/pricing";
+import { heldFor, paySaleBill, payOldBills } from "@/lib/sale-payments";
 
 export type SalePayload = {
   date?: string; // the bill's own day (YYYY-MM-DD) when it is entered later; today if left out
@@ -38,7 +39,10 @@ export type SalePayload = {
   oldGold?: Array<{ metal: string; weight: number; melting: number; amt: number }>;
   // Matured BCs of the customer spent on the bill, and how much of each.
   bcs?: Array<{ bcId: string; amt: number }>;
+  // Money the shop holds for the customer (their सावकारी account), spent on the bill.
+  fromLend?: number;
   discount: number;
+  // What the customer pays now. Beyond what this bill needs, it pays their older bills, oldest first.
   paidAmt: number;
   mode: string;
   // The day the money is entered in the cash book, when later than the bill's own day:
@@ -52,6 +56,8 @@ function revalidateSales() {
   revalidatePath("/orders");
   revalidatePath("/old-gold");
   revalidatePath("/bc");
+  revalidatePath("/loans");
+  revalidatePath("/loans/[kind]/[id]", "page");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");
@@ -84,7 +90,8 @@ export async function createSale(payload: SalePayload) {
     }
     const discount = round2(payload.discount || 0);
     const paidAmt = round2(payload.paidAmt || 0);
-    if (discount < 0 || paidAmt < 0) throw new UserError("Discount and amount paid cannot be negative.");
+    const fromLend = round2(payload.fromLend || 0);
+    if (discount < 0 || paidAmt < 0 || fromLend < 0) throw new UserError("Discount and amounts paid cannot be negative.");
     if (paidAmt > 0 && !isCashMode(payload.mode)) throw new UserError("Choose how the customer paid.");
 
     const oldGold = (payload.oldGold ?? []).map((old) => ({
@@ -211,10 +218,21 @@ export async function createSale(payload: SalePayload) {
         if (use.amt > round2((row.value ?? 0) - spent)) throw new UserError("That is more than is left on the BC.");
       }
       const bcAmt = round2(bcs.reduce((sum, use) => sum + use.amt, 0));
-      const settled = round2(advance + oldGoldAmt + bcAmt + paidAmt);
-      if (settled > totalAmt) {
-        throw new UserError("Advance, old metal, BC and payment together come to more than the bill total. Buy the old metal separately or lower the payment.");
+      // Money the shop holds for the customer, locked like a BC.
+      let lendId: string | null = null;
+      if (fromLend > 0) {
+        const account = await heldFor(tx, customerId);
+        if (fromLend > account.held) throw new UserError(`The shop holds only ${inr(account.held)} for this customer.`);
+        lendId = account.lendId;
       }
+      const setOff = round2(advance + oldGoldAmt + bcAmt + fromLend);
+      if (setOff > totalAmt) {
+        throw new UserError("Advance, old metal, BC and money held together come to more than the bill total. Buy the old metal separately.");
+      }
+      // The payment goes to this bill as far as it needs; the rest pays the customer's older bills.
+      const paidOnBill = Math.min(paidAmt, round2(totalAmt - setOff));
+      const towardsOld = round2(paidAmt - paidOnBill);
+      const settled = round2(setOff + paidOnBill);
 
       const [saleBill] = await tx.insert(itemSaleBill).values({
         date,
@@ -237,13 +255,18 @@ export async function createSale(payload: SalePayload) {
         }
       }
 
-      // None of these moves cash: the advance and the BC's instalments were recorded when taken,
-      // old metal is an exchange.
+      // None of these moves cash: the advance, the BC's instalments and the money held were
+      // recorded when taken, old metal is an exchange.
       if (advance > 0) {
         await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: advance, mode: "order_advance" });
       }
       for (const use of bcs) {
         await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: use.amt, mode: "bc", bc: use.bcId });
+      }
+      if (lendId && fromLend > 0) {
+        // Spending it is the shop paying back what it held, in goods.
+        await tx.insert(lendEntry).values({ lend: lendId, date, type: "repayment", amt: fromLend, mode: "sale", sale: saleBill.id });
+        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: fromLend, mode: "lend" });
       }
       for (const old of oldGold) {
         const [row] = await tx.insert(oldItem).values({
@@ -254,16 +277,16 @@ export async function createSale(payload: SalePayload) {
         await logAudit(tx, user.id, { tableName: "old_item", recordId: row.id, action: "insert", newValues: row });
       }
 
-      if (paidAmt > 0 && isCashMode(payload.mode)) {
+      if (paidOnBill > 0 && isCashMode(payload.mode)) {
         const [payment] = await tx.insert(itemSaleDetails).values({
           sale: saleBill.id,
           date: paidOn,
-          amtPaid: paidAmt,
+          amtPaid: paidOnBill,
           mode: payload.mode,
         }).returning();
         await recordCash(tx, {
           direction: "in",
-          amt: paidAmt,
+          amt: paidOnBill,
           location: locationFor(payload.mode),
           sourceTable: "item_sale_details",
           sourceId: payment.id,
@@ -271,12 +294,16 @@ export async function createSale(payload: SalePayload) {
           date: paidOn,
         });
       }
+      if (towardsOld > 0 && isCashMode(payload.mode)) {
+        const { left } = await payOldBills(tx, user.id, customerId, towardsOld, payload.mode, paidOn, saleBill.id);
+        if (left > 0) throw new UserError(`The payment is ${inr(left)} more than this bill and what the customer owes on earlier bills.`);
+      }
 
       await logAudit(tx, user.id, {
         tableName: "item_sale_bill",
         recordId: saleBill.id,
         action: "insert",
-        newValues: { ...saleBill, lines, looseLines, advance, oldGold, bcs },
+        newValues: { ...saleBill, lines, looseLines, advance, oldGold, bcs, fromLend, towardsOld },
       });
       return saleBill.id;
     });
@@ -343,35 +370,7 @@ export async function addSalePayment(saleId: string, _prev: FormState, formData:
 
   try {
     const date = entryDate(formData);
-    await db.transaction(async (tx) => {
-      // Only succeeds while the payment fits in what is still due.
-      const [updated] = await tx.update(itemSaleBill)
-        .set({ paidAmt: sql`coalesce(${itemSaleBill.paidAmt}, 0) + ${amt}`, updatedAt: new Date() })
-        .where(and(
-          eq(itemSaleBill.id, saleId),
-          isNull(itemSaleBill.cancelledAt),
-          sql`coalesce(${itemSaleBill.paidAmt}, 0) + ${amt} <= coalesce(${itemSaleBill.totalAmt}, 0)`,
-        ))
-        .returning();
-      if (!updated) throw new UserError("That is more than what is due on this bill.");
-
-      const [payment] = await tx.insert(itemSaleDetails).values({
-        sale: saleId,
-        date,
-        amtPaid: amt,
-        mode,
-      }).returning();
-      await recordCash(tx, {
-        direction: "in",
-        amt,
-        location: locationFor(mode),
-        sourceTable: "item_sale_details",
-        sourceId: payment.id,
-        desc: "Payment received on sale bill",
-        date,
-      });
-      await logAudit(tx, user.id, { tableName: "item_sale_details", recordId: payment.id, action: "insert", newValues: payment });
-    });
+    await db.transaction((tx) => paySaleBill(tx, user.id, saleId, amt, mode, date));
   } catch (error) {
     return fail(error, "Could not record the payment.");
   }
@@ -454,6 +453,11 @@ export async function cancelSale(saleId: string, _prev: FormState, formData: For
         });
         reversed[mode] = amt;
       }
+      // Money the shop held for the customer and spent on the bill is held again, from today.
+      const lendUsed = await tx.select().from(lendEntry).where(and(eq(lendEntry.sale, saleId), eq(lendEntry.mode, "sale")));
+      for (const used of lendUsed) {
+        await tx.insert(lendEntry).values({ lend: used.lend, date, type: "taken", amt: used.amt, mode: "sale_cancel", sale: saleId });
+      }
 
       await tx.update(itemSaleBill)
         .set({ cancelledAt: date, cancelReason: reason, updatedAt: new Date() })
@@ -469,6 +473,7 @@ export async function cancelSale(saleId: string, _prev: FormState, formData: For
           oldMetalReturned: exchanged.map((old) => old.id), orderReopened: saleBill.order,
           // What was spent from a BC is on it again: its balance counts only bills not cancelled.
           bcReturned: payments.filter((payment) => payment.mode === "bc").map((payment) => ({ bc: payment.bc, amt: payment.amtPaid })),
+          lendReturned: lendUsed.map((used) => ({ lend: used.lend, amt: used.amt })),
         },
       });
     });

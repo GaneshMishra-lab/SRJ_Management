@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -5,7 +6,7 @@ import { entity } from "@/db/schema/entities";
 import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
 import { addLoanEntry } from "@/app/actions/loans";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
+import { Card, DataTable, DateField, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateTime, inr } from "@/lib/format";
@@ -15,8 +16,11 @@ import { round2 } from "@/lib/pricing";
 // the shop borrowed from them. Every movement is listed with what was left after it.
 const KINDS = {
   given: { kind: "loan" as const, first: { value: "given", label: "Give more" }, repay: "Repayment received", advanced: "Lent in all", repaid: "Repaid", left: "Owes the shop", subtitle: "Money the shop lent" },
-  taken: { kind: "lend" as const, first: { value: "taken", label: "Borrow more" }, repay: "Repay the borrowing", advanced: "Borrowed in all", repaid: "Repaid", left: "Shop owes", subtitle: "Money the shop borrowed" },
+  taken: { kind: "lend" as const, first: { value: "taken", label: "Borrow more" }, repay: "Repay the borrowing", advanced: "Borrowed in all", repaid: "Repaid", left: "Shop owes", subtitle: "Money the shop borrowed, or holds for a customer (सावकारी)" },
 };
+
+// Lines that moved no cash: money held, spent on a sale bill, and given back when that bill was cancelled.
+const ON_A_BILL: Record<string, string> = { sale: "Used on a sale bill", sale_cancel: "Sale bill cancelled, held again" };
 
 export default async function LoanAccountPage({ params }: { params: Promise<{ kind: string; id: string }> }) {
   await getCurrentUser();
@@ -64,8 +68,10 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
             empty="No entries yet."
             rows={[...lines].reverse().map(({ entry, repayment, balance: after }) => [
               <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
-              <span key="e" className="capitalize">{entry.type}</span>,
-              <span key="m" className="capitalize">{entry.mode}</span>,
+              "sale" in entry && entry.sale && ON_A_BILL[entry.mode ?? ""]
+                ? <Link key="e" href={`/sales/${entry.sale}`} className={linkClass}>{ON_A_BILL[entry.mode ?? ""]}</Link>
+                : <span key="e" className="capitalize">{entry.type}</span>,
+              <span key="m" className="capitalize">{ON_A_BILL[entry.mode ?? ""] ? "No cash" : entry.mode}</span>,
               <span key="a" className={repayment ? "text-ok" : "text-fg"}>{repayment ? "−" : "+"} {inr(entry.amt)}</span>,
               inr(after),
             ])}

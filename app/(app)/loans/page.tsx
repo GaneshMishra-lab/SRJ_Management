@@ -64,7 +64,12 @@ export default async function LoansPage() {
               row.due > 0 ? <span key="o" className="font-medium text-fg">{inr(row.due)}</span> : <span key="o" className="text-fg-3">Settled</span>,
             ])}
           />
-          <Card title={section.formTitle} hint="Cash lent or borrowed with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line above.">
+          <Card
+            title={section.formTitle}
+            hint={section.kind === "lend"
+              ? "Cash borrowed with nothing else behind it, and money a customer leaves with the shop (not against an order). If the person owes on sale bills, it pays those first; only the rest is held. A sale bill can later be paid out of what is held."
+              : "Cash lent with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line above."}
+          >
             <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
               <SelectField label="Entry" name="type" options={[section.first, { value: "repayment", label: section.repay }]} />
               <EntityFields label="Person" entities={people} newLabel="Or a new person" />

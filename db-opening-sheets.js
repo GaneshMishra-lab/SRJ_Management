@@ -31,6 +31,7 @@ export const SHEETS = [
       { key: 'metal', header: 'Metal', required: true, type: METALS },
       { key: 'loose', header: 'Loose', type: ['yes', 'no'], note: 'yes for mani and anything else sold by weight without a label.' },
       { key: 'piecesPerGram', header: 'Pieces per gram', type: 'int', note: 'Loose types only: 6 for 1x6.' },
+      { key: 'nextLabel', header: 'Next label', type: 'int', note: 'Labelled types only: the number the app gives the next new piece. Empty means one after the highest label on the Stock pieces sheet. Set it above the labels already used on pieces that were sold, so that no number is given twice.' },
     ],
   },
   {
@@ -44,6 +45,9 @@ export const SHEETS = [
       { key: 'gross', header: 'Gross weight', required: true, type: 'num', note: 'Grams.' },
       { key: 'net', header: 'Net weight', type: 'num', note: 'Grams. Empty means the same as gross.' },
       { key: 'melting', header: 'Melting', required: true, type: 'num', note: 'Purity in percent: 91.6 for 22 carat.' },
+      { key: 'wastage', header: 'Wastage', type: 'num', note: 'Percent added to the melting on the purchase: 4 makes 76 melting cost 80.' },
+      { key: 'making', header: 'Making', type: 'num', note: 'Rupees for a gram of net weight, paid on the purchase.' },
+      { key: 'extraCharges', header: 'Extra charges', type: 'num', note: 'Rupees, for the piece.' },
       { key: 'huid', header: 'HUID', type: 'text' },
       { key: 'cost', header: 'Cost', type: 'num', note: 'What the piece cost, in rupees, if known.' },
       day(),
@@ -145,7 +149,7 @@ export const SHEETS = [
   },
   {
     name: 'Borrowed',
-    about: 'Money the shop has borrowed and not yet repaid. One row for each lender.',
+    about: 'Money the shop has borrowed and not yet repaid, and money customers have left with the shop that is not against an order (a deposit, written under सावकारी). One row for each person.',
     columns: [
       ...party(),
       day(),
@@ -186,7 +190,7 @@ export const SHEETS = [
     name: 'BC',
     about: 'BCs not yet used up: one row each, with everything the customer has paid into it so far. A BC whose term is over but which has not been used goes here too; mature it in the app after the start.',
     columns: [
-      { key: 'cardNo', header: 'Card no', type: 'text', note: 'The number on the customer's card or in the BC book.' },
+      { key: 'cardNo', header: 'Card no', type: 'text', note: "The number on the customer's card or in the BC book." },
       ...party('Customer'),
       day('Started', true),
       { key: 'instalment', header: 'Each month', required: true, type: 'num', note: 'Rupees.' },

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, PackageOpen, ChevronRight, Tag } from "lucide-react";
+import { Plus, PackageOpen, ChevronRight, Tag, ClipboardCheck } from "lucide-react";
 import { btn, labelClass, rowClass, stockStatus, tableWrapClass, tdClass, thClass } from "@/lib/styles";
 import { dateOnly, grams } from "@/lib/format";
 import { createItemType } from "@/app/actions/purchases";
@@ -104,6 +104,12 @@ export function InventoryManager({
           <Link href="/inventory/label" className={btn("secondary")}>
             <Tag className="h-4 w-4" aria-hidden="true" />
             To label · {toLabel}
+          </Link>
+        )}
+        {view === "pieces" && (
+          <Link href={`/stock-check?metal=${metal}`} className={btn("secondary")}>
+            <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+            Stock check
           </Link>
         )}
         {view === "misc" ? (

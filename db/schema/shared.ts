@@ -12,4 +12,4 @@ export const grams = (name: string) => numeric(name, { precision: 12, scale: 3, 
 export const rupees = (name: string) => numeric(name, { precision: 14, scale: 2, mode: "number" });
 export const pct = (name: string) => numeric(name, { precision: 7, scale: 3, mode: "number" });
 
-export { boolean, check, date, integer, pgTable, pgView, text, timestamp, uniqueIndex, uuid };
+export { boolean, check, date, integer, numeric, pgTable, pgView, text, timestamp, uniqueIndex, uuid };

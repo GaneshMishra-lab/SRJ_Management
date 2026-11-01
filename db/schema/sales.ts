@@ -298,7 +298,7 @@ export const itemSaleDetails = pgTable("item_sale_details", {
   sale: uuid("sale").references(() => itemSaleBill.id),
   date: timestamp("date", { mode: "string" }),
   amtPaid: rupees("amt_paid"),
-  mode: text("mode"), // cash, online, old_item, order_advance, bc
+  mode: text("mode"), // cash, online, old_item, order_advance, bc, lend (money the shop held for the customer)
   bc: uuid("bc").references(() => bc.id), // the BC spent, for mode bc
 });
 

@@ -116,14 +116,15 @@ async function readWorkbook() {
 
     const at = new Map();
     worksheet.getRow(1).eachCell((cell, index) => at.set(plain(value(cell)), index));
-    const missing = sheet.columns.filter((column) => !at.has(plain(column.header)));
+    // A column added after a workbook was made may be left out of it; it then reads as empty.
+    const missing = sheet.columns.filter((column) => column.required && !at.has(plain(column.header)));
     if (missing.length > 0) {
       problem(sheet.name, 1, `heading not found: ${missing.map((column) => column.header).join(', ')}`);
       continue;
     }
     worksheet.eachRow((row, number) => {
       if (number === 1) return;
-      const cells = sheet.columns.map((column) => value(row.getCell(at.get(plain(column.header)))));
+      const cells = sheet.columns.map((column) => (at.has(plain(column.header)) ? value(row.getCell(at.get(plain(column.header)))) : null));
       if (cells.every((cell) => cell === null)) return;
       const record = { row: number };
       sheet.columns.forEach((column, index) => { record[column.key] = parse(sheet.name, number, column, cells[index]); });
@@ -188,18 +189,23 @@ function build(data, existing) {
 
   // Item types, known by name and metal together: a gold Ring and a silver Ring are two types.
   const types = new Map(existing.types.map((type) => [`${nameKey(type.name)}|${type.metal}`, { ...type, isNew: false }]));
+  // The label the app gives next, per type id, as the sheet asks; raised below past every label loaded.
+  const topLabel = new Map();
   for (const r of data['Item types']) {
     if (!r.name || !r.metal) continue;
     const key = `${nameKey(r.name)}|${r.metal}`;
     const loose = r.loose === 'yes';
+    if (loose && r.nextLabel !== null) problem('Item types', r.row, '"Next label" is only for labelled types');
     const known = types.get(key);
     if (known) {
       if (known.isNew) problem('Item types', r.row, `${r.metal} "${r.name}" is listed twice`);
       else if (known.loose !== loose) problem('Item types', r.row, `${r.metal} "${r.name}" is already in the app as ${known.loose ? 'a loose' : 'a labelled'} type`);
+      else if (r.nextLabel) topLabel.set(known.id, r.nextLabel - 1);
       continue;
     }
     const row = { name: r.name.trim(), metal: r.metal, loose, pieces_per_gram: loose ? r.piecesPerGram : null, next_label: 1 };
     types.set(key, { id: add('item_type', row), metal: r.metal, loose, isNew: true });
+    if (r.nextLabel && !loose) topLabel.set(types.get(key).id, r.nextLabel - 1);
   }
   const typeOf = (sheet, r, loose) => {
     if (!r.type || !r.metal) return null;
@@ -212,7 +218,6 @@ function build(data, existing) {
   // Labelled pieces. A piece must come from a purchased item, so each gets one, with no bill behind it.
   const labels = new Set(existing.stock.map((piece) => `${piece.item_type}|${piece.label}`));
   const huids = new Set(existing.stock.map((piece) => piece.huid).filter(Boolean));
-  const topLabel = new Map();
   for (const r of data['Stock pieces']) {
     const sheet = 'Stock pieces';
     const type = typeOf(sheet, r, false);
@@ -220,6 +225,7 @@ function build(data, existing) {
     above0(sheet, r.row, 'Gross weight', r.gross);
     above0(sheet, r.row, 'Label', r.label);
     percent(sheet, r.row, 'Melting', r.melting);
+    if (r.melting !== null && r.wastage !== null && r.melting + r.wastage > 100) problem(sheet, r.row, 'melting and wastage together are more than 100');
     if (net !== null && r.gross !== null && net > r.gross) problem(sheet, r.row, 'net weight is more than gross weight');
     if (r.huid) {
       if (huids.has(r.huid)) problem(sheet, r.row, `HUID ${r.huid} is on another piece`);
@@ -232,13 +238,19 @@ function build(data, existing) {
 
     const date = noon(r.date ?? eve);
     const weights = { item_type: type.id, gross_weight: round3(r.gross), net_weight: round3(net), melting: round3(r.melting) };
-    const item = add('item_purchased', { bill: null, ...weights, amt: r.cost === null ? null : round2(r.cost) });
+    const item = add('item_purchased', {
+      bill: null, ...weights,
+      wastage: r.wastage === null ? null : round3(r.wastage),
+      making: r.making === null ? null : round2(r.making),
+      extra_charges: r.extraCharges === null ? null : round2(r.extraCharges),
+      amt: r.cost === null ? null : round2(r.cost),
+    });
     const piece = add('item_stock', { date, ...weights, metal: r.metal, huid: r.huid, label: r.label, status: r.approval ? 'on_approval' : 'stock', item });
     if (r.approval) {
       add('item_approval', { item: piece, entity: person(sheet, r.row, r.approval, 'customer'), date_out: date, note: 'Out on approval when the books were opened' });
     }
   }
-  // Labels given by the app carry on after the highest one loaded.
+  // Labels given by the app carry on after the highest one loaded, or from the sheet's next label if that is higher.
   const labelsFrom = [];
   for (const [id, top] of topLabel) {
     const fresh = rows.item_type.find((type) => type.id === id);

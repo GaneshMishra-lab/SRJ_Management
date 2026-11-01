@@ -48,7 +48,7 @@ export function Segmented<T extends string>({
 }: {
   value: T;
   onChange: (value: T) => void;
-  options: { value: T; label: React.ReactNode; title?: string }[];
+  options: { value: T; label: React.ReactNode; title?: string; disabled?: boolean }[];
   label: string;
   className?: string;
 }) {
@@ -61,10 +61,11 @@ export function Segmented<T extends string>({
           aria-pressed={option.value === value}
           title={option.title}
           aria-label={option.title}
+          disabled={option.disabled}
           onClick={() => onChange(option.value)}
           className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-[0.45rem] px-3.5 text-sm font-medium whitespace-nowrap transition-colors ${
             option.value === value ? "bg-card text-fg shadow-card" : "text-fg-3 hover:text-fg"
-          }`}
+          } disabled:pointer-events-none disabled:opacity-45`}
         >
           {option.label}
         </button>

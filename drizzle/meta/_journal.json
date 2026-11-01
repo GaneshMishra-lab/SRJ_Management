@@ -71,6 +71,20 @@
       "when": 1792049278646,
       "tag": "0009_bc_scheme",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792941762570,
+      "tag": "0010_lend_on_sale",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793543971506,
+      "tag": "0011_stock_check",
+      "breakpoints": true
     }
   ]
 }

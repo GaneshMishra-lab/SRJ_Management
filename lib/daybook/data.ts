@@ -96,10 +96,11 @@ async function getSales(start: string, end: string) {
   const bills = await db
     .select({
       id: itemSaleBill.id, date: itemSaleBill.date, cancelledAt: itemSaleBill.cancelledAt,
-      discount: itemSaleBill.discount, totalAmt: itemSaleBill.totalAmt, party: entity.name,
+      discount: itemSaleBill.discount, totalAmt: itemSaleBill.totalAmt, party: entity.name, orderMetal: itemOrder.metal,
     })
     .from(itemSaleBill)
     .leftJoin(entity, eq(itemSaleBill.customer, entity.id))
+    .leftJoin(itemOrder, eq(itemSaleBill.order, itemOrder.id))
     .where(or(within(itemSaleBill.date), within(itemSaleBill.cancelledAt)))
     .orderBy(asc(itemSaleBill.date));
   if (bills.length === 0) return [];
@@ -233,12 +234,12 @@ const lookups: Record<string, (ids: string[], day: string) => Promise<Found>> = 
   },
   lend_entry: async (ids) => {
     const rows = await db
-      .select({ id: lendEntry.id, party: entity.name })
+      .select({ id: lendEntry.id, lend: lend.id, party: entity.name })
       .from(lendEntry)
       .innerJoin(lend, eq(lendEntry.lend, lend.id))
       .leftJoin(entity, eq(lend.lender, entity.id))
       .where(inArray(lendEntry.id, ids));
-    return found(rows, (row) => ({ kind: { in: "borrow_taken", out: "borrow_repaid" }, party: row.party, href: "/loans" }));
+    return found(rows, (row) => ({ kind: { in: "borrow_taken", out: "borrow_repaid" }, party: row.party, href: `/loans/taken/${row.lend}` }));
   },
   expense: async (ids, day) => {
     const rows = await db.select().from(expense).where(inArray(expense.id, ids));
@@ -421,14 +422,21 @@ export async function getDay(day: string, heads: Head[]) {
   // The sale bills. A bill's lines come to exactly the money received on it that day, so the page
   // still closes on the cash in the drawer.
   for (const sale of sales) {
-    const sum = (rows: { amt: number | null }[]) => round2(rows.reduce((total, row) => total + (row.amt ?? 0), 0));
+    const sum = (rows: readonly { amt: number | null }[]) => round2(rows.reduce((total, row) => total + (row.amt ?? 0), 0));
     const total = sale.totalAmt ?? 0;
-    const advance = sum(sale.settled.filter((row) => row.mode === "order_advance"));
-    const fromBc = sum(sale.settled.filter((row) => row.mode === "bc"));
+    const paidBy = (mode: string) => sum(sale.settled.filter((row) => row.mode === mode));
+    // Money held before the bill and spent on it: an order's advance, a BC, a customer's deposit
+    // (their सावकारी account). Each was written when it came in, under the head of its own kind,
+    // and is taken off that head again here.
+    const setOffs = [
+      { id: "advance", kind: `order.${metalOf(sale.orderMetal)}`, amt: paidBy("order_advance"), tag: "advance" },
+      { id: "bc", kind: "bc_instalment", amt: paidBy("bc"), tag: "bc" },
+      { id: "lend", kind: "borrow_taken", amt: paidBy("lend"), tag: "fromLend" },
+    ] as const;
     const money = sale.settled.filter((row) => isMoney(row.mode));
-    const unsettled = round2(total - advance - fromBc - sum(sale.old));
-    // What is not a piece's own (discount, advance, BC, cancellation) is written under the head of the
-    // metal most of the bill's value is in, should a bill ever mix the two.
+    const unsettled = round2(total - sum(setOffs) - sum(sale.old));
+    // What is not a piece's own (discount, cancellation) is written under the head of the metal
+    // most of the bill's value is in, should a bill ever mix the two.
     const value = (metal: string) => sum(sale.pieces.filter((piece) => piece.metal === metal));
     const billKind = `sale.${value("silver") > value("gold") ? "silver" : "gold"}`;
     const write = (id: string, kind: string, flow: Entry["flow"], amt: number, more: Partial<Entry> = {}) => {
@@ -446,18 +454,16 @@ export async function getDay(day: string, heads: Head[]) {
         write(piece.id, `sale.${piece.metal}`, "in", piece.amt ?? 0, { party: name || sale.party, weight: piece.netWeight ?? piece.looseWeight, note: name ? sale.party : null });
       }
       write("discount", billKind, "out", sale.discount ?? 0, { tag: "discount" });
-      // An order's advance was written on the day it was taken.
-      write("advance", billKind, "out", advance, { tag: "advance" });
-      // So were a BC's instalments, under the BC head.
-      write("bc", billKind, "out", fromBc, { tag: "bc" });
+      for (const off of setOffs) write(off.id, off.kind, "out", off.amt, { tag: off.tag });
       // Old metal taken in exchange is old metal bought.
       for (const old of sale.old) write(old.id, `old.${metalOf(old.metal)}`, "out", old.amt ?? 0, { weight: old.weight, href: `/old-gold/${old.id}` });
       write("due", "sale_due", "out", round2(unsettled - sum(money.filter((row) => onDay(row.date, day)))));
     }
-    // A cancelled bill is taken back off the page on the day it is cancelled: the sale, the old
-    // metal handed back, and whatever the customer still had to pay.
+    // A cancelled bill is taken back off the page on the day it is cancelled: the sale, the money
+    // held that it used (held again), the old metal handed back, and whatever was still to pay.
     if (onDay(sale.cancelledAt, day)) {
-      write("cancelled", billKind, "out", round2(total - advance - fromBc), { tag: "cancelled" });
+      write("cancelled", billKind, "out", total, { tag: "cancelled" });
+      for (const off of setOffs) write(`${off.id}:back`, off.kind, "in", off.amt, { tag: "cancelled" });
       for (const old of sale.old) write(`${old.id}:back`, `old.${metalOf(old.metal)}`, "in", old.amt ?? 0, { weight: old.weight, tag: "refund", href: `/old-gold/${old.id}` });
       write("due:cancelled", "sale_due", "in", round2(unsettled - sum(money)), { tag: "cancelled" });
     }

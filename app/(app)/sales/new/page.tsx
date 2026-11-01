@@ -19,7 +19,7 @@ export default async function NewSalePage({
   const day = typeof requested === "string" && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today ? requested : today;
   const backdated = day !== today;
 
-  const { customers, pieces, loose, orders, bcs, rates } = await saleFormData(day);
+  const { customers, pieces, loose, orders, bcs, held, udhari, rates } = await saleFormData(day);
   const stale = (["Gold", "Silver"] as const).filter((metal) => !rates[metal]?.isToday);
 
   return (
@@ -54,6 +54,8 @@ export default async function NewSalePage({
         rates={{ Gold: rates.Gold?.rate ?? null, Silver: rates.Silver?.rate ?? null }}
         orders={orders}
         bcs={bcs}
+        held={held}
+        udhari={udhari}
       />
     </div>
   );

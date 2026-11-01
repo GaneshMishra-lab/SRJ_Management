@@ -21,7 +21,9 @@ export const KINDS: Kind[] = [
   // under उधारी on the नावे side, and money that comes on a later day under उधारी on the जमा side.
   ...byMetal("sale", "विक्री बिल", "Sale bill", (metal) => credit(`${metal} Sales`)),
   { key: "sale_due_received", labelMr: "विक्री बिलाची बाकी जमा", labelEn: "Sale bill dues received", head: credit("Udhari (Credit)") },
-  ...byMetal("order", "ऑर्डरचा आगाऊ", "Order advance", (metal) => credit(`${metal} Sales`)),
+  // An order's advance is money the shop holds for the customer, as the book keeps it: under
+  // सावकारी, like a customer's deposit. Spending either on a bill is a minus line there.
+  ...byMetal("order", "ऑर्डरचा आगाऊ", "Order advance", () => credit("Savkari (Moneylending)")),
   ...byMetal("bullion_sell", "चोख विक्री", "Bullion sold", (metal) => credit(`${metal} Sales`)),
   { key: "repair", labelMr: "दुरुस्तीचे पैसे", labelEn: "Repair charge", head: credit("Panchurani Pethe") },
   { key: "misc_sale", labelMr: "इतर वस्तू विक्री", labelEn: "Misc item sold", head: credit("Panchurani Pethe") },
@@ -29,6 +31,7 @@ export const KINDS: Kind[] = [
   { key: "loan_repaid", labelMr: "उधारी परत आली", labelEn: "Loan repayment received", head: credit("Udhari (Credit)") },
   // A BC's monthly instalment. Spending the BC on a bill later is a minus line under the sale head.
   { key: "bc_instalment", labelMr: "बीसीचा हप्ता", labelEn: "BC instalment", head: credit("BC Pethe") },
+  // Money the shop borrowed, and money a customer leaves with it (not against an order).
   { key: "borrow_taken", labelMr: "दुकानाने घेतलेले कर्ज", labelEn: "Money the shop borrowed", head: credit("Savkari (Moneylending)") },
   { key: "borrow_repaid", labelMr: "दुकानाने कर्ज फेडले", labelEn: "Borrowing repaid by the shop", head: credit("Savkari (Moneylending)") },
   // Old metal that was bought, melted and sold on: the selling side of the old-metal head.

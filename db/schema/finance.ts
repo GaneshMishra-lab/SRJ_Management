@@ -2,6 +2,7 @@ import { auditTimestamps, date, integer, pct, pgTable, pgView, rupees, text, tim
 import { sql } from "drizzle-orm";
 
 import { entity } from "./entities";
+import { itemSaleBill } from "./sales";
 
 // loan: cash the shop gave. One running account per entity.
 export const loan = pgTable("loan", {
@@ -20,7 +21,8 @@ export const loanEntry = pgTable("loan_entry", {
   mode: text("mode"),
 });
 
-// lend: cash the shop took. One running account per entity.
+// lend: cash the shop took. One running account per entity. A customer's deposit (money left
+// with the shop, not against an order) is kept here too, and a sale bill can be paid out of it.
 export const lend = pgTable("lend", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
@@ -34,7 +36,11 @@ export const lendEntry = pgTable("lend_entry", {
   date: timestamp("date", { mode: "string" }),
   type: text("type"), // taken, repayment
   amt: rupees("amt"),
+  // cash, online; opening for what was owed before the app was used. No cash moves for sale (the
+  // money held paid part of a sale bill, a repayment) and sale_cancel (that bill was cancelled
+  // and the money is held again, taken).
   mode: text("mode"),
+  sale: uuid("sale").references(() => itemSaleBill.id), // the bill, for modes sale and sale_cancel
 });
 
 // BC: a customer pays the same instalment every month for a term. Once the term has run, the shop

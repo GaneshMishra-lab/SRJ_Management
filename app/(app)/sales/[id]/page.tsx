@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
+import { lendEntry } from "@/db/schema/finance";
 import { cashLedger } from "@/db/schema/ledger";
 import { itemSale, itemSaleBill, itemSaleDetails, itemStock, itemType } from "@/db/schema/sales";
 import { addSalePayment, cancelSale, discountSaleDue } from "@/app/actions/sales";
@@ -51,6 +52,10 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
     .orderBy(asc(itemType.name), asc(itemStock.label));
 
   const payments = await db.select().from(itemSaleDetails).where(eq(itemSaleDetails.sale, id)).orderBy(asc(itemSaleDetails.date));
+  // The customer's सावकारी account, when money it held paid part of the bill.
+  const [heldOn] = payments.some((payment) => payment.mode === "lend")
+    ? await db.select({ lend: lendEntry.lend }).from(lendEntry).where(and(eq(lendEntry.sale, id), eq(lendEntry.mode, "sale")))
+    : [];
 
   const b = sale.bill;
   const cancelled = !!b.cancelledAt;
@@ -79,7 +84,11 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
       {cancelled && (
         <Notice tone="bad" title={`Cancelled on ${dateOnly(b.cancelledAt)}`}>
           <p>Reason: {b.cancelReason}</p>
-          <p>The pieces are back in stock and nothing is owed on this bill.{payments.some((payment) => payment.mode === "bc") ? " What was taken from a BC is on the BC again." : ""}</p>
+          <p>
+            The pieces are back in stock and nothing is owed on this bill.
+            {payments.some((payment) => payment.mode === "bc") ? " What was taken from a BC is on the BC again." : ""}
+            {heldOn ? " The money the shop held for the customer and used here is held again." : ""}
+          </p>
           {reversals.map((entry) => (
             <p key={entry.id}>{inr(entry.amt)} reversed out of the {entry.location === "vault" ? "vault" : "bank account"} on {dateOnly(entry.date)}.</p>
           ))}
@@ -147,7 +156,9 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
                   <div className="min-w-0">
                     {payment.mode === "bc" && payment.bc
                       ? <Link href={`/bc/${payment.bc}`} className={`text-sm ${linkClass}`}>From BC</Link>
-                      : <p className="text-sm text-fg capitalize">{payment.mode?.replace("_", " ")}</p>}
+                      : payment.mode === "lend" && heldOn
+                        ? <Link href={`/loans/taken/${heldOn.lend}`} className={`text-sm ${linkClass}`}>From money held (सावकारी)</Link>
+                        : <p className="text-sm text-fg capitalize">{payment.mode?.replace("_", " ")}</p>}
                     <p className="text-[13px] text-fg-3">{dateTime(payment.date)}</p>
                   </div>
                   <span className="shrink-0 text-sm text-fg tabular-nums">{inr(payment.amtPaid)}</span>

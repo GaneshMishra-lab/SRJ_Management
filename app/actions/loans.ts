@@ -7,8 +7,10 @@ import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
 import { getCurrentUser, logAudit } from "@/lib/dal";
 import { resolveEntity } from "@/lib/entities";
 import { entryDate, fail, FormState, num, text, UserError } from "@/lib/form";
+import { inr } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2 } from "@/lib/pricing";
+import { payOldBills } from "@/lib/sale-payments";
 
 const signed = (amt: typeof loanEntry.amt | typeof lendEntry.amt, type: typeof loanEntry.type | typeof lendEntry.type) =>
   sql<number>`coalesce(sum(case when ${type} = 'repayment' then -${amt} else ${amt} end), 0)`.mapWith(Number);
@@ -18,17 +20,28 @@ const signed = (amt: typeof loanEntry.amt | typeof lendEntry.amt, type: typeof l
 export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
   const repayment = text(formData, "type") === "repayment";
-  const amt = round2(num(formData, "amt"));
+  const whole = round2(num(formData, "amt"));
   const mode = text(formData, "mode");
-  if (amt <= 0) return { error: "Enter an amount above zero." };
+  if (whole <= 0) return { error: "Enter an amount above zero." };
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
 
+  let done = "Recorded.";
   try {
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "customer");
       const date = entryDate(formData);
       let entryId: string;
       let balance: number;
+      let amt = whole;
+
+      // Money left with the shop by someone who owes on sale bills is udhari paid, not a deposit:
+      // it pays those bills first, oldest first, and only what is left is held.
+      if (kind === "lend" && !repayment) {
+        const { paid, left } = await payOldBills(tx, user.id, party, amt, mode, date);
+        if (paid > 0) done = left > 0 ? `${inr(paid)} paid on earlier sale bills, ${inr(left)} recorded as borrowed.` : `All ${inr(paid)} paid on earlier sale bills; nothing borrowed.`;
+        if (left <= 0) return;
+        amt = left;
+      }
 
       if (kind === "loan") {
         const [account] = await tx.insert(loan).values({ borrower: party })
@@ -63,8 +76,10 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
 
   revalidatePath("/loans");
   revalidatePath("/loans/[kind]/[id]", "page");
+  revalidatePath("/sales");
+  revalidatePath("/parties");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");
-  return { success: "Recorded." };
+  return { success: done };
 }

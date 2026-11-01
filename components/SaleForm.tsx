@@ -51,6 +51,8 @@ type Bc = {
   monthsPaid: number;
   months: number;
 };
+// An amount per customer: money the shop holds for them, or what they owe on earlier bills.
+type PerCustomer = { customerId: string; amt: number };
 
 export function SaleForm({
   customers,
@@ -59,6 +61,8 @@ export function SaleForm({
   rates,
   orders,
   bcs = [],
+  held = [],
+  udhari = [],
   date,
   onSaved,
   onCancel,
@@ -69,6 +73,8 @@ export function SaleForm({
   rates: { Gold: number | null; Silver: number | null };
   orders: ReadyOrder[];
   bcs?: Bc[];
+  held?: PerCustomer[]; // on the customer's सावकारी account, which the bill can be paid out of
+  udhari?: PerCustomer[]; // on earlier bills, which a payment beyond this bill goes to
   // The bill's own day (YYYY-MM-DD) when the sale is entered later; today if left out.
   date?: string;
   // Given when the form is shown inside another screen (the day book's popup), which then
@@ -90,6 +96,8 @@ export function SaleForm({
   const [orderId, setOrderId] = useState("");
   const [oldGold, setOldGold] = useState<OldGold[]>([]);
   const [bcUse, setBcUse] = useState<Record<string, number>>({});
+  // Money held for the customer spent on the bill; null means as much as the bill can take.
+  const [lendUse, setLendUse] = useState<number | null>(null);
   const [discount, setDiscount] = useState(0);
   const [paidAmt, setPaidAmt] = useState(0);
   const [mode, setMode] = useState("cash");
@@ -97,6 +105,12 @@ export function SaleForm({
   const [paymentDate, setPaymentDate] = useState("");
   // The time of the sale on the bill's day. Empty means the time now.
   const [billTime, setBillTime] = useState("");
+
+  // Another customer's money held is not theirs to spend: start again from as much as the bill takes.
+  const chooseCustomer = (id: string) => {
+    setCustomerId(id);
+    setLendUse(null);
+  };
 
   const pieceById = new Map(pieces.map((piece) => [piece.id, piece]));
   const pieceName = (piece: Piece) => `${piece.typeName ?? "Piece"} #${piece.label ?? "-"}`;
@@ -128,7 +142,7 @@ export function SaleForm({
     setOrderId(id);
     const chosen = orders.find((o) => o.id === id);
     if (!chosen) return;
-    if (chosen.customerId) setCustomerId(chosen.customerId);
+    if (chosen.customerId) chooseCustomer(chosen.customerId);
     const added = chosen.stockIds
       .filter((stockId) => pieceById.has(stockId) && !lines.some((line) => line.stockId === stockId))
       .map((stockId) => {
@@ -168,7 +182,11 @@ export function SaleForm({
   const readyBcs = customerBcs.filter((row) => row.matured);
   const bcUsed = readyBcs.map((row) => ({ bcId: row.id, amt: bcUse[row.id] ?? 0 })).filter((use) => use.amt > 0);
   const bcAmt = round2(bcUsed.reduce((sum, use) => sum + use.amt, 0));
-  const balanceDue = round2(totalAmt - advance - oldGoldAmt - bcAmt - paidAmt);
+  const heldAmt = held.find((row) => row.customerId === customerId)?.amt ?? 0;
+  const forLend = Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt));
+  const fromLend = heldAmt > 0 ? lendUse ?? Math.min(heldAmt, forLend) : 0;
+  const owedBefore = udhari.find((row) => row.customerId === customerId)?.amt ?? 0;
+  const balanceDue = round2(totalAmt - advance - oldGoldAmt - bcAmt - fromLend - paidAmt);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +205,7 @@ export function SaleForm({
       loose: looseLines,
       oldGold,
       bcs: bcUsed,
+      fromLend,
       discount,
       paidAmt,
       mode,
@@ -203,8 +222,10 @@ export function SaleForm({
   };
 
   // What is left for a BC to cover, before what this BC itself covers; then what is left for money.
+  // A payment beyond this bill goes to the customer's earlier bills, as far as they owe.
   const forBc = (id: string) => Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt + (bcUse[id] ?? 0)));
-  const toPay = Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt));
+  const toPay = Math.max(0, round2(forLend - fromLend));
+  const towardsOld = Math.max(0, round2(paidAmt - toPay));
 
   // The bill on the left; what it comes to stays in view on the right while the pieces are added.
   return (
@@ -218,7 +239,7 @@ export function SaleForm({
 
         <Card title="Customer">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SelectField label="Customer" className={orders.length === 0 && !isNewCustomer ? "sm:col-span-2" : ""} value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+            <SelectField label="Customer" className={orders.length === 0 && !isNewCustomer ? "sm:col-span-2" : ""} value={customerId} onChange={(e) => chooseCustomer(e.target.value)} required>
               <option value="">Select a customer...</option>
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>{customer.name}</option>
@@ -489,14 +510,27 @@ export function SaleForm({
                 />
               );
             })}
+            {heldAmt > 0 && (
+              <Field
+                label="From money the shop holds (₹)"
+                type="number"
+                step="0.01"
+                min="0"
+                max={Math.min(heldAmt, forLend)}
+                value={fromLend || ""}
+                onChange={(e) => setLendUse(Number(e.target.value))}
+                hint={`${inr(heldAmt)} held for this customer (सावकारी). Set 0 to keep it held.`}
+              />
+            )}
             <Field
               label="Amount paid now (₹)"
               type="number"
               step="0.01"
               min="0"
-              max={toPay}
+              max={round2(toPay + owedBefore)}
               value={paidAmt || ""}
               onChange={(e) => setPaidAmt(Number(e.target.value))}
+              hint={owedBefore > 0 ? `The customer owes ${inr(owedBefore)} on earlier bills. Anything paid beyond this bill goes to them, oldest first.` : undefined}
             />
             <SelectField label="Payment mode" value={mode} onChange={(e) => setMode(e.target.value)}>
               <option value="cash">Cash (Vault)</option>
@@ -527,7 +561,9 @@ export function SaleForm({
               {advance > 0 && <SummaryRow label="Order advance" value={inr(advance)} tone="ok" />}
               {oldGoldAmt > 0 && <SummaryRow label="Old metal" value={inr(oldGoldAmt)} tone="ok" />}
               {bcAmt > 0 && <SummaryRow label="From BC" value={inr(bcAmt)} tone="ok" />}
+              {fromLend > 0 && <SummaryRow label="From money held" value={inr(fromLend)} tone="ok" />}
               <SummaryRow label="Paid now" value={inr(paidAmt)} tone="ok" />
+              {towardsOld > 0 && <SummaryRow label="Of it, towards earlier bills" value={inr(towardsOld)} />}
               <SummaryRow label="Balance due" value={inr(Math.max(0, balanceDue))} tone={balanceDue > 0 ? "accent" : undefined} />
             </dl>
 
