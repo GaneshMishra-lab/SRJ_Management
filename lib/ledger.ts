@@ -80,6 +80,9 @@ export async function cashBalances(before?: string) {
   return balances;
 }
 
+// The evening the books were opened on: stock already in the shop then is valued at this day's rates.
+export const BOOKS_OPENED = "2026-11-01";
+
 export type CurrentRate = { rate: number; date: string; isToday: boolean } | null;
 
 // Fine rate per metal as of a shop day (today unless given). Until that day's is entered, the most

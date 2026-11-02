@@ -2,8 +2,8 @@ import "server-only";
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { lend, lendEntry } from "@/db/schema/finance";
-import { itemOrder, itemPurchased, itemSaleBill, itemStock, itemType } from "@/db/schema/sales";
+import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
+import { itemOrder, itemPurchased, itemRepairing, itemSaleBill, itemStock, itemType } from "@/db/schema/sales";
 import { listBcs } from "@/lib/bc";
 import { balanceOf } from "@/lib/dues";
 import { getCurrentRates } from "@/lib/ledger";
@@ -27,6 +27,8 @@ export async function saleFormData(day: string) {
       typeName: itemType.name,
       metal: itemStock.metal,
       netWeight: itemStock.netWeight,
+      grossWeight: itemStock.grossWeight,
+      huid: itemStock.huid,
       melting: itemStock.melting,
       status: itemStock.status,
     })
@@ -72,8 +74,9 @@ export async function saleFormData(day: string) {
   }));
 
   // Money the shop holds for each customer (their सावकारी account), which a bill can be paid out
-  // of, and what each still owes on earlier bills, which a payment beyond the bill goes to.
-  const [heldRows, owedRows] = await Promise.all([
+  // of, and what each already owes (earlier bills, loan account, repairs), which a payment beyond
+  // the bill goes to.
+  const [heldRows, billRows, loanRows, repairRows] = await Promise.all([
     db.select({ customerId: lend.lender, amt: balanceOf(lendEntry.amt, lendEntry.type) })
       .from(lend)
       .innerJoin(lendEntry, eq(lendEntry.lend, lend.id))
@@ -82,13 +85,23 @@ export async function saleFormData(day: string) {
       .from(itemSaleBill)
       .where(and(isNull(itemSaleBill.cancelledAt), sql`coalesce(${itemSaleBill.totalAmt}, 0) > coalesce(${itemSaleBill.paidAmt}, 0)`))
       .groupBy(itemSaleBill.customer),
+    db.select({ customerId: loan.borrower, amt: balanceOf(loanEntry.amt, loanEntry.type) })
+      .from(loan)
+      .innerJoin(loanEntry, eq(loanEntry.loan, loan.id))
+      .groupBy(loan.borrower),
+    db.select({ customerId: itemRepairing.customer, amt: sql<number>`sum(coalesce(${itemRepairing.amt}, 0) - coalesce(${itemRepairing.paidAmt}, 0))`.mapWith(Number) })
+      .from(itemRepairing)
+      .where(sql`coalesce(${itemRepairing.amt}, 0) > coalesce(${itemRepairing.paidAmt}, 0)`)
+      .groupBy(itemRepairing.customer),
   ]);
   const owing = (rows: { customerId: string | null; amt: number }[]) =>
     rows.flatMap((row) => (row.customerId && row.amt > 0 ? [{ customerId: row.customerId, amt: round2(row.amt) }] : []));
+  const owed = new Map<string, number>();
+  for (const row of owing([...billRows, ...loanRows, ...repairRows])) owed.set(row.customerId, round2((owed.get(row.customerId) ?? 0) + row.amt));
 
   // A sale written up later is billed at its own day's rates.
   const rates = await getCurrentRates(day);
-  return { customers, pieces, loose, orders, bcs, held: owing(heldRows), udhari: owing(owedRows), rates };
+  return { customers, pieces, loose, orders, bcs, held: owing(heldRows), udhari: [...owed].map(([customerId, amt]) => ({ customerId, amt })), rates };
 }
 
 export async function purchaseFormData() {

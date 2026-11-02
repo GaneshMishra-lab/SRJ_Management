@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, PackageOpen, ChevronRight, Tag, ClipboardCheck } from "lucide-react";
 import { btn, labelClass, rowClass, stockStatus, tableWrapClass, tdClass, thClass } from "@/lib/styles";
 import { dateOnly, grams } from "@/lib/format";
 import { createItemType } from "@/app/actions/purchases";
 import { RowLink, Segmented } from "@/components/controls";
+import { PieceSearch } from "@/components/PieceSearch";
 import { Card, DataTable, Empty, Field, PageHeader, StatusBadge } from "@/components/ui";
 
 type ItemType = { id: string; name: string; metal: string | null; loose: boolean; piecesPerGram: number | null };
@@ -22,7 +24,9 @@ type StockItem = {
   itemTypeId: string | null;
   typeName: string | null;
   metal: string | null;
-  weight: number | null;
+  netWeight: number | null;
+  grossWeight: number | null;
+  huid: string | null;
   isNew: boolean;
 };
 
@@ -34,11 +38,12 @@ export function InventoryManager({
   toLabel,
 }: {
   itemTypes: ItemType[];
-  inventory: StockItem[];
+  inventory: StockItem[]; // every labelled piece, sold ones too, for the search
   loose: LooseStock[];
   misc: MiscStock[];
   toLabel: number;
 }) {
+  const router = useRouter();
   // The shop's three kinds of stock: labelled pieces, loose metal kept by weight, and misc items kept by count.
   const [view, setView] = useState<View>("pieces");
   // Only one metal is listed at a time.
@@ -65,11 +70,12 @@ export function InventoryManager({
     }
   };
 
+  const inShop = inventory.filter((item) => item.status === "stock" || item.status === "on_approval");
   const getStockForType = (typeId: string) => {
-    return inventory.filter((item) => item.itemTypeId === typeId);
+    return inShop.filter((item) => item.itemTypeId === typeId);
   };
   const shownTypes = itemTypes.filter((type) => type.metal === metal && type.loose === (view === "loose"));
-  const pieces = (m: string) => inventory.filter((item) => item.metal === m).length;
+  const pieces = (m: string) => inShop.filter((item) => item.metal === m).length;
   const looseOf = (typeId: string) => loose.filter((row) => row.itemTypeId === typeId);
   const looseWeight = (m: string) =>
     loose.filter((row) => itemTypes.some((type) => type.id === row.itemTypeId && type.metal === m)).reduce((sum, row) => sum + row.weight, 0);
@@ -121,6 +127,14 @@ export function InventoryManager({
           </button>
         )}
       </PageHeader>
+
+      {view === "pieces" && (
+        <PieceSearch
+          pieces={inventory}
+          onPick={(piece) => router.push(`/inventory/${piece.id}`)}
+          placeholder="Find a piece, gold or silver: label, type, weight or HUID"
+        />
+      )}
 
       {view === "misc" ? (
         <DataTable
@@ -174,7 +188,7 @@ export function InventoryManager({
           {shownTypes.map((type) => {
             const typeStock = getStockForType(type.id);
             const isExpanded = expandedTypeId === type.id;
-            const weight = typeStock.reduce((sum, item) => sum + (item.weight ?? 0), 0);
+            const weight = typeStock.reduce((sum, item) => sum + (item.netWeight ?? 0), 0);
 
             return (
               <div key={type.id} className="border-b border-line last:border-0">
@@ -214,7 +228,7 @@ export function InventoryManager({
                                 </td>
                                 <td className={tdClass}>{dateOnly(item.date)}</td>
                                 <td className={tdClass}>{item.isNew ? "New stock" : "Refurbished"}</td>
-                                <td className={`${tdClass} text-right tabular-nums`}>{grams(item.weight)}</td>
+                                <td className={`${tdClass} text-right tabular-nums`}>{grams(item.netWeight)}</td>
                                 <td className={tdClass}>
                                   <StatusBadge tone={stockStatus[item.status ?? ""]?.tone ?? "neutral"}>{stockStatus[item.status ?? ""]?.label ?? item.status}</StatusBadge>
                                 </td>

@@ -10,7 +10,7 @@ import { entryDate, fail, FormState, num, text, UserError } from "@/lib/form";
 import { inr } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2 } from "@/lib/pricing";
-import { payOldBills } from "@/lib/sale-payments";
+import { payOldDues } from "@/lib/sale-payments";
 
 const signed = (amt: typeof loanEntry.amt | typeof lendEntry.amt, type: typeof loanEntry.type | typeof lendEntry.type) =>
   sql<number>`coalesce(sum(case when ${type} = 'repayment' then -${amt} else ${amt} end), 0)`.mapWith(Number);
@@ -34,11 +34,11 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
       let balance: number;
       let amt = whole;
 
-      // Money left with the shop by someone who owes on sale bills is udhari paid, not a deposit:
-      // it pays those bills first, oldest first, and only what is left is held.
+      // Money left with the shop by someone who owes it anything (sale bills, a loan, a repair) is
+      // udhari paid, not a deposit: it pays those first, oldest first, and only what is left is held.
       if (kind === "lend" && !repayment) {
-        const { paid, left } = await payOldBills(tx, user.id, party, amt, mode, date);
-        if (paid > 0) done = left > 0 ? `${inr(paid)} paid on earlier sale bills, ${inr(left)} recorded as borrowed.` : `All ${inr(paid)} paid on earlier sale bills; nothing borrowed.`;
+        const { paid, left } = await payOldDues(tx, user.id, party, amt, mode, date);
+        if (paid > 0) done = left > 0 ? `${inr(paid)} paid on what this person owes, ${inr(left)} recorded as borrowed.` : `All ${inr(paid)} paid on what this person owes; nothing borrowed.`;
         if (left <= 0) return;
         amt = left;
       }
@@ -77,6 +77,7 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
   revalidatePath("/loans");
   revalidatePath("/loans/[kind]/[id]", "page");
   revalidatePath("/sales");
+  revalidatePath("/repairs");
   revalidatePath("/parties");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");

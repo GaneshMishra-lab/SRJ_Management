@@ -13,3 +13,15 @@ export function priceSaleLine(line: { netWeight: number; rate: number; makingPct
   const gst = round2(((metalValue + makingAmt) * GST_PCT) / 100);
   return { metalValue, makingAmt, gst, amt: round2(metalValue + makingAmt + gst) };
 }
+
+// What a bought piece costs at a rate per gram of fine metal, the way a purchase bill prices it:
+// fine weight (net × (melting + wastage) ÷ the rate's purity) at that rate, plus the making per
+// gram of net weight and any extra charges. The daily rate is for pure metal, so purity 100.
+export function pieceCost(
+  piece: { netWeight: number; melting: number; wastage: number; making: number; extraCharges: number },
+  rate: number,
+  purity = 100,
+) {
+  const fine = round3((piece.netWeight * (piece.melting + piece.wastage)) / purity);
+  return { fine, amt: round2(fine * rate + piece.netWeight * piece.making + piece.extraCharges) };
+}

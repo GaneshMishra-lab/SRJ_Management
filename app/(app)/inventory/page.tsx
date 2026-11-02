@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { miscCategory, miscItem } from "@/db/schema/entities";
 import { miscTrade } from "@/db/schema/ledger";
 import { itemPurchased, itemStock, itemType, looseStockLedger } from "@/db/schema/sales";
-import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { looseBalances, looseFromPurchase } from "@/lib/loose";
 import { InventoryManager } from "@/components/InventoryManager";
 import { getCurrentUser } from "@/lib/dal";
@@ -13,7 +13,7 @@ export default async function InventoryPage() {
   // Fetch item types
   const itemTypes = await db.select().from(itemType);
 
-  // Fetch active inventory items
+  // Every labelled piece: the search finds sold ones too, the lists by type show only what is in the shop.
   const rawInventory = await db
     .select({
       id: itemStock.id,
@@ -21,19 +21,22 @@ export default async function InventoryPage() {
       status: itemStock.status,
       label: itemStock.label,
       itemTypeId: itemStock.itemType,
+      typeName: itemType.name,
       metal: itemStock.metal,
       weight: itemStock.netWeight,
+      grossWeight: itemStock.grossWeight,
+      huid: itemStock.huid,
       purchaseId: itemStock.item,
     })
     .from(itemStock)
-    .where(inArray(itemStock.status, ['stock', 'on_approval']))
+    .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
     .orderBy(desc(itemStock.createdAt));
 
   // Transform data for the UI
-  const inventory = rawInventory.map(({ purchaseId, ...item }) => ({
+  const inventory = rawInventory.map(({ purchaseId, weight, ...item }) => ({
     ...item,
+    netWeight: weight,
     isNew: !!purchaseId, // otherwise a refurbished old item
-    typeName: null,
   }));
 
   // Purchased items still waiting to be labelled into stock

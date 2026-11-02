@@ -7,6 +7,7 @@ import { createSale } from "@/app/actions/sales";
 import { GST_PCT, priceSaleLine, purityRate, round2 } from "@/lib/pricing";
 import { dateOnly, grams, inr } from "@/lib/format";
 import { Card, Field, Notice, SelectField, SummaryRow } from "@/components/ui";
+import { PieceSearch } from "@/components/PieceSearch";
 import { btn, iconButtonClass, linkClass } from "@/lib/styles";
 
 type Customer = { id: string; name: string | null };
@@ -18,6 +19,8 @@ type Piece = {
   netWeight: number | null;
   melting: number | null;
   status: string | null;
+  grossWeight?: number | null;
+  huid?: string | null;
 };
 type Line = { stockId: string; rate: number; makingPct: number };
 // Loose metal (mani) on hand: one choice per type and melting, sold by weight.
@@ -51,7 +54,7 @@ type Bc = {
   monthsPaid: number;
   months: number;
 };
-// An amount per customer: money the shop holds for them, or what they owe on earlier bills.
+// An amount per customer: money the shop holds for them, or what they already owe.
 type PerCustomer = { customerId: string; amt: number };
 
 export function SaleForm({
@@ -74,7 +77,7 @@ export function SaleForm({
   orders: ReadyOrder[];
   bcs?: Bc[];
   held?: PerCustomer[]; // on the customer's सावकारी account, which the bill can be paid out of
-  udhari?: PerCustomer[]; // on earlier bills, which a payment beyond this bill goes to
+  udhari?: PerCustomer[]; // earlier bills, loan and repairs, which a payment beyond this bill goes to
   // The bill's own day (YYYY-MM-DD) when the sale is entered later; today if left out.
   date?: string;
   // Given when the form is shown inside another screen (the day book's popup), which then
@@ -222,7 +225,7 @@ export function SaleForm({
   };
 
   // What is left for a BC to cover, before what this BC itself covers; then what is left for money.
-  // A payment beyond this bill goes to the customer's earlier bills, as far as they owe.
+  // A payment beyond this bill goes to what the customer already owes, as far as it goes.
   const forBc = (id: string) => Math.max(0, round2(totalAmt - advance - oldGoldAmt - bcAmt + (bcUse[id] ?? 0)));
   const toPay = Math.max(0, round2(forLend - fromLend));
   const towardsOld = Math.max(0, round2(paidAmt - toPay));
@@ -285,14 +288,12 @@ export function SaleForm({
         </Card>
 
         <Card title="Pieces">
-          <SelectField label="Add a piece" value="" onChange={(e) => addPiece(e.target.value)}>
-            <option value="">{available.length === 0 ? "No more pieces available" : "Select a piece..."}</option>
-            {available.map((piece) => (
-              <option key={piece.id} value={piece.id}>
-                {pieceName(piece)} · {piece.metal} · {grams(piece.netWeight)}{piece.status === "on_approval" ? " · on approval" : ""}
-              </option>
-            ))}
-          </SelectField>
+          <PieceSearch
+            pieces={available}
+            onPick={(piece) => addPiece(piece.id)}
+            placeholder={available.length === 0 ? "No more pieces available" : "Add a piece: label, type, weight or HUID"}
+            emptyText="No piece in stock matches."
+          />
 
           {priced.length === 0 ? (
             <p className="mt-4 rounded-xl border border-dashed border-line-strong px-4 py-8 text-center text-sm text-fg-3">No pieces on this bill yet.</p>
@@ -530,7 +531,7 @@ export function SaleForm({
               max={round2(toPay + owedBefore)}
               value={paidAmt || ""}
               onChange={(e) => setPaidAmt(Number(e.target.value))}
-              hint={owedBefore > 0 ? `The customer owes ${inr(owedBefore)} on earlier bills. Anything paid beyond this bill goes to them, oldest first.` : undefined}
+              hint={owedBefore > 0 ? `The customer already owes ${inr(owedBefore)} (earlier bills, loan, repairs). Anything paid beyond this bill goes to that, oldest first.` : undefined}
             />
             <SelectField label="Payment mode" value={mode} onChange={(e) => setMode(e.target.value)}>
               <option value="cash">Cash (Vault)</option>
@@ -563,7 +564,7 @@ export function SaleForm({
               {bcAmt > 0 && <SummaryRow label="From BC" value={inr(bcAmt)} tone="ok" />}
               {fromLend > 0 && <SummaryRow label="From money held" value={inr(fromLend)} tone="ok" />}
               <SummaryRow label="Paid now" value={inr(paidAmt)} tone="ok" />
-              {towardsOld > 0 && <SummaryRow label="Of it, towards earlier bills" value={inr(towardsOld)} />}
+              {towardsOld > 0 && <SummaryRow label="Of it, towards what is owed" value={inr(towardsOld)} />}
               <SummaryRow label="Balance due" value={inr(Math.max(0, balanceDue))} tone={balanceDue > 0 ? "accent" : undefined} />
             </dl>
 

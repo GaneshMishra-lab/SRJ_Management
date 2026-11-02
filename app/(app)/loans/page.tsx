@@ -67,7 +67,7 @@ export default async function LoansPage() {
           <Card
             title={section.formTitle}
             hint={section.kind === "lend"
-              ? "Cash borrowed with nothing else behind it, and money a customer leaves with the shop (not against an order). If the person owes on sale bills, it pays those first; only the rest is held. A sale bill can later be paid out of what is held."
+              ? "Cash borrowed with nothing else behind it, and money a customer leaves with the shop (not against an order). If the person owes the shop anything (sale bills, a loan, a repair), it pays that first; only the rest is held. A sale bill can later be paid out of what is held."
               : "Cash lent with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line above."}
           >
             <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">

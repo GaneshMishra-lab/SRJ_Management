@@ -12,6 +12,7 @@ import {
   itemStock,
   itemType,
   langdiLedger,
+  oldItem,
   supplierReturn,
   supplierReturnSettlement,
 } from "@/db/schema/sales";
@@ -20,8 +21,9 @@ import { Card, DateField, Field, Grams, PageHeader, Percent, Rupees, SelectField
 import { ActionForm } from "@/components/ActionForm";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
-import { dateTime, grams, inr } from "@/lib/format";
-import { round2, round3 } from "@/lib/pricing";
+import { dateOnly, dateTime, grams, inr, istDate } from "@/lib/format";
+import { BOOKS_OPENED, getCurrentRates } from "@/lib/ledger";
+import { pieceCost, round2, round3 } from "@/lib/pricing";
 import { STANDARD_PURITY, Standard } from "@/lib/standards";
 import { inputClass, linkClass, stockStatus } from "@/lib/styles";
 
@@ -38,13 +40,17 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
       billId: bill.id,
       billDate: bill.date,
       billStandard: bill.standard,
+      billRate: bill.rate,
       supplierName: entity.name,
+      oldAmt: oldItem.amt,
+      oldWeight: oldItem.weight,
     })
     .from(itemStock)
     .leftJoin(itemType, eq(itemStock.itemType, itemType.id))
     .leftJoin(itemPurchased, eq(itemStock.item, itemPurchased.id))
     .leftJoin(bill, eq(itemPurchased.bill, bill.id))
     .leftJoin(entity, eq(bill.supplier, entity.id))
+    .leftJoin(oldItem, eq(itemStock.oldItemSource, oldItem.id))
     .where(eq(itemStock.id, id));
   if (!piece) notFound();
 
@@ -103,9 +109,58 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
     : 0;
   const returnDue = supplierRet ? round2((supplierRet.ret.amt ?? 0) - supplierRet.settled) : 0;
 
+  // What the piece cost the shop, and what the same metal and charges come to at today's rate.
+  // Opening stock has no bill, so it is valued at the rate of the evening the books were opened.
+  const opening = Boolean(piece.purchase) && !piece.billId;
+  const metal = s.metal === "Silver" ? "Silver" : "Gold";
+  const costParts = {
+    netWeight: s.netWeight ?? 0,
+    melting: s.melting ?? 0,
+    wastage: piece.purchase?.wastage ?? 0,
+    making: piece.purchase?.making ?? 0,
+    extraCharges: piece.purchase?.extraCharges ?? 0,
+  };
+  const [ratesNow, ratesOpened] = await Promise.all([getCurrentRates(), opening ? getCurrentRates(BOOKS_OPENED) : undefined]);
+  const rateNow = ratesNow[metal];
+  const rateOpened = ratesOpened?.[metal] ?? null;
+  const rateLink = (day: string) => <Link href="/dashboard" className={linkClass}>enter the {metal.toLowerCase()} rate for {dateOnly(day)}</Link>;
+
+  let costThen: number | null = null;
+  let costThenNote: React.ReactNode = null;
+  if (piece.billId && piece.purchase) {
+    costThen = piece.purchase.amt ?? 0;
+    const { fine } = pieceCost(costParts, piece.billRate ?? 0, purity);
+    costThenNote = `${grams(fine)} fine at ${inr(piece.billRate)}/g (${piece.billStandard ?? "995"}) on ${dateOnly(piece.billDate)}`;
+  } else if (opening) {
+    if (rateOpened) {
+      costThen = pieceCost(costParts, rateOpened.rate).amt;
+      costThenNote = `Opening stock, at the ${dateOnly(rateOpened.date)} rate of ${inr(rateOpened.rate)}/g`;
+    } else {
+      costThenNote = <>Opening stock: {rateLink(BOOKS_OPENED)} on the dashboard</>;
+    }
+  } else if (piece.oldAmt != null) {
+    costThen = piece.oldAmt;
+    costThenNote = `Old metal it was made from, ${grams(piece.oldWeight)} taken in`;
+  }
+
+  const inShop = s.status === "stock" || s.status === "on_approval";
+  const now = rateNow ? pieceCost(costParts, rateNow.rate) : null;
+  const making = round2(costParts.netWeight * costParts.making + costParts.extraCharges);
+  const costNowNote = rateNow && now
+    ? `${grams(now.fine)} fine at ${inr(rateNow.rate)}/g${making > 0 ? ` + ${inr(making)} making` : ""}${rateNow.isToday ? "" : ` (rate of ${dateOnly(rateNow.date)}; today's is not entered)`}`
+    : <>No rate yet: {rateLink(istDate())} on the dashboard</>;
+  const change = costThen != null && now ? round2(now.amt - costThen) : null;
+
+  const costStats = [
+    { name: "Cost when bought", value: costThen == null ? "Not known" : inr(costThen), note: costThenNote },
+    ...(inShop ? [{ name: "Cost at today's rate", value: now ? inr(now.amt) : "-", note: costNowNote }] : []),
+    ...(inShop && change != null
+      ? [{ name: "Change", value: `${change >= 0 ? "+" : "−"} ${inr(Math.abs(change))}`, tone: change >= 0 ? ("ok" as const) : ("bad" as const) }]
+      : []),
+  ];
+
   const timeline: { when: string | null; text: React.ReactNode }[] = [];
   // A piece already in the shop when the books were opened has a purchased item but no bill behind it.
-  const opening = Boolean(piece.purchase) && !piece.billId;
   if (opening) {
     timeline.push({ when: s.date, text: "In stock when the books were opened" });
   } else if (piece.purchase) {
@@ -153,6 +208,8 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
         { name: "Melting", value: `${s.melting ?? 0}%` },
         { name: "HUID", value: s.huid ?? "-" },
       ]} />
+
+      <Stats items={costStats} />
 
       <Card title="History">
         <ol>

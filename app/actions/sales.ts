@@ -23,7 +23,7 @@ import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/
 import { dateOnly, inr, istDate, parseDbDate } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { priceSaleLine, purityRate, round2, round3 } from "@/lib/pricing";
-import { heldFor, paySaleBill, payOldBills } from "@/lib/sale-payments";
+import { heldFor, paySaleBill, payOldDues } from "@/lib/sale-payments";
 
 export type SalePayload = {
   date?: string; // the bill's own day (YYYY-MM-DD) when it is entered later; today if left out
@@ -42,7 +42,7 @@ export type SalePayload = {
   // Money the shop holds for the customer (their सावकारी account), spent on the bill.
   fromLend?: number;
   discount: number;
-  // What the customer pays now. Beyond what this bill needs, it pays their older bills, oldest first.
+  // What the customer pays now. Beyond what this bill needs, it pays what they already owe, oldest first.
   paidAmt: number;
   mode: string;
   // The day the money is entered in the cash book, when later than the bill's own day:
@@ -58,6 +58,7 @@ function revalidateSales() {
   revalidatePath("/bc");
   revalidatePath("/loans");
   revalidatePath("/loans/[kind]/[id]", "page");
+  revalidatePath("/repairs");
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");
@@ -229,7 +230,7 @@ export async function createSale(payload: SalePayload) {
       if (setOff > totalAmt) {
         throw new UserError("Advance, old metal, BC and money held together come to more than the bill total. Buy the old metal separately.");
       }
-      // The payment goes to this bill as far as it needs; the rest pays the customer's older bills.
+      // The payment goes to this bill as far as it needs; the rest pays what the customer already owes.
       const paidOnBill = Math.min(paidAmt, round2(totalAmt - setOff));
       const towardsOld = round2(paidAmt - paidOnBill);
       const settled = round2(setOff + paidOnBill);
@@ -295,8 +296,8 @@ export async function createSale(payload: SalePayload) {
         });
       }
       if (towardsOld > 0 && isCashMode(payload.mode)) {
-        const { left } = await payOldBills(tx, user.id, customerId, towardsOld, payload.mode, paidOn, saleBill.id);
-        if (left > 0) throw new UserError(`The payment is ${inr(left)} more than this bill and what the customer owes on earlier bills.`);
+        const { left } = await payOldDues(tx, user.id, customerId, towardsOld, payload.mode, paidOn, saleBill.id);
+        if (left > 0) throw new UserError(`The payment is ${inr(left)} more than this bill and what the customer already owes.`);
       }
 
       await logAudit(tx, user.id, {
