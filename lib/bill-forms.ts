@@ -59,7 +59,8 @@ export async function saleFormData(day: string) {
   }).filter((order) => order.stockIds.length > 0);
 
   // Loose metal (mani) that can be sold by weight: one choice per type and melting on hand.
-  const loose = (await looseBalances()).filter((row) => row.weight > 0);
+  // A counted lot with no pieces left (only a leftover weight to be weighed off) cannot be sold from.
+  const loose = (await looseBalances()).filter((row) => row.weight > 0 && (!row.counted || row.pieces > 0));
 
   // Every BC not yet used up: a matured one is spent on the bill, a running one is shown so the
   // counter can tell the customer when it matures.

@@ -11,9 +11,9 @@ import { RowLink, Segmented } from "@/components/controls";
 import { PieceSearch } from "@/components/PieceSearch";
 import { Card, DataTable, Empty, Field, PageHeader, StatusBadge } from "@/components/ui";
 
-type ItemType = { id: string; name: string; metal: string | null; loose: boolean; piecesPerGram: number | null };
+type ItemType = { id: string; name: string; metal: string | null; loose: boolean; piecesPerGram: number | null; counted: boolean };
 // Loose metal (mani) on hand: one row per type and melting.
-type LooseStock = { itemTypeId: string; melting: number; weight: number };
+type LooseStock = { itemTypeId: string; melting: number; wastage: number; making: number; weight: number; pieces: number; leftover: boolean };
 type MiscStock = { id: string; name: string | null; unit: string | null; categoryName: string | null; inHand: number };
 type View = "pieces" | "loose" | "misc";
 type StockItem = {
@@ -53,17 +53,19 @@ export function InventoryManager({
   const [newItemTypeName, setNewItemTypeName] = useState("");
   const [newItemTypeMetal, setNewItemTypeMetal] = useState("Gold");
   const [newPiecesPerGram, setNewPiecesPerGram] = useState("");
+  const [newCounted, setNewCounted] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleCreateType = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await createItemType(newItemTypeName, newItemTypeMetal, view === "loose", Number(newPiecesPerGram) || undefined);
+    const res = await createItemType(newItemTypeName, newItemTypeMetal, view === "loose", Number(newPiecesPerGram) || undefined, view === "loose" && newCounted);
     setLoading(false);
     if (res.success) {
       setIsModalOpen(false);
       setNewItemTypeName("");
       setNewPiecesPerGram("");
+      setNewCounted(false);
       // It will auto-revalidate because of revalidatePath in the action
     } else {
       alert(res.error);
@@ -158,8 +160,8 @@ export function InventoryManager({
               <thead>
                 <tr>
                   <th className={thClass}>Type</th>
-                  <th className={thClass}>Melting</th>
-                  <th className={`${thClass} text-right`}>About</th>
+                  <th className={thClass}>Lots</th>
+                  <th className={`${thClass} text-right`}>Pieces</th>
                   <th className={`${thClass} text-right`}>In stock</th>
                 </tr>
               </thead>
@@ -172,9 +174,13 @@ export function InventoryManager({
                       <td className={tdClass}>
                         <Link href={`/inventory/loose/${type.id}`} className="font-medium text-fg">{type.name}</Link>
                         {type.piecesPerGram ? <span className="ml-2 text-fg-3">{type.piecesPerGram} to the gram</span> : null}
+                        {type.counted ? <span className="ml-2 text-fg-3">counted</span> : null}
+                        {rows.some((row) => row.leftover) && <span className="ml-2 rounded-full bg-bad px-1.5 text-[11px] font-bold text-white" title="A lot has a leftover to weigh">!</span>}
                       </td>
-                      <td className={tdClass}>{rows.length === 0 ? "-" : rows.map((row) => `${row.melting}%`).join(", ")}</td>
-                      <td className={`${tdClass} text-right tabular-nums`}>{type.piecesPerGram ? `${Math.round(weight * type.piecesPerGram)} pieces` : "-"}</td>
+                      <td className={tdClass}>{rows.length === 0 ? "-" : `${rows.length} · ${[...new Set(rows.map((row) => `${row.melting}%`))].join(", ")}`}</td>
+                      <td className={`${tdClass} text-right tabular-nums`}>
+                        {type.counted ? `${rows.reduce((sum, row) => sum + row.pieces, 0)} pcs` : type.piecesPerGram ? `about ${Math.round(weight * type.piecesPerGram)}` : "-"}
+                      </td>
                       <td className={`${tdClass} text-right text-fg tabular-nums`}>{grams(weight)}</td>
                     </RowLink>
                   );
@@ -288,6 +294,12 @@ export function InventoryManager({
                   placeholder="e.g. 16"
                   hint="Only used to show about how many pieces a weight comes to."
                 />
+              )}
+              {view === "loose" && (
+                <label className="flex items-start gap-2 text-sm text-fg-2">
+                  <input type="checkbox" checked={newCounted} onChange={(e) => setNewCounted(e.target.checked)} className="mt-0.5 h-4 w-4 accent-accent" />
+                  <span>Counted in pieces as well as weight (phuli, nath). Leave off for mani, kept by weight alone.</span>
+                </label>
               )}
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setIsModalOpen(false)} className={btn("secondary")}>

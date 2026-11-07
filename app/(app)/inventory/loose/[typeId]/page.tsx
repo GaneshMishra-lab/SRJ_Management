@@ -2,24 +2,29 @@ import { notFound } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { itemType, looseStockLedger } from "@/db/schema/sales";
-import { checkLooseStock } from "@/app/actions/stock";
+import { checkLooseStock, setLooseCounted, writeOffLooseLeftover } from "@/app/actions/stock";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, Field, Grams, PageHeader, SelectField, Stats } from "@/components/ui";
+import { Card, DataTable, DateField, Field, Grams, Notice, PageHeader, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateTime, grams } from "@/lib/format";
-import { looseBalances, loosePieces } from "@/lib/loose";
+import { looseBalances, loosePieces, lotTerms, WRITE_OFF_LIMIT } from "@/lib/loose";
 import { round3 } from "@/lib/pricing";
+import { CountedSwitch } from "./CountedSwitch";
 
 const causes: Record<string, string> = {
   item_purchased: "Purchase",
   item_sale: "Sale",
   sale_cancel: "Sale cancelled",
   stock_check: "Stock check",
+  weighing_difference: "Weighing difference",
   opening: "Opening stock",
 };
 
-// One loose type (a kind of mani): what is on hand by melting, and every movement in and out.
+// A lot is sent from a form as "melting|wastage|making"; the type is in the page's address.
+const lotValue = (lot: { melting: number; wastage: number; making: number }) => `${lot.melting}|${lot.wastage}|${lot.making}`;
+
+// One loose type (a kind of mani, phuli or nath): what is on hand in each lot, and every movement.
 export default async function LooseStockPage({ params }: { params: Promise<{ typeId: string }> }) {
   await getCurrentUser();
   const { typeId } = await params;
@@ -30,7 +35,9 @@ export default async function LooseStockPage({ params }: { params: Promise<{ typ
 
   const onHand = await looseBalances(db, [typeId]);
   const weight = round3(onHand.reduce((sum, row) => sum + row.weight, 0));
+  const pieces = onHand.reduce((sum, row) => sum + row.pieces, 0);
   const about = loosePieces(weight, type.piecesPerGram);
+  const leftovers = onHand.filter((row) => row.leftover);
 
   const movements = await db
     .select()
@@ -38,62 +45,95 @@ export default async function LooseStockPage({ params }: { params: Promise<{ typ
     .where(eq(looseStockLedger.itemType, typeId))
     .orderBy(desc(looseStockLedger.date), desc(looseStockLedger.createdAt))
     .limit(200);
-  // Every melting this type has ever been kept at, so one that has run out can still be weighed.
-  const meltings = [...new Set([...onHand.map((row) => row.melting), ...movements.map((row) => row.melting ?? 0)])].sort((a, b) => b - a);
+  // Every lot this type has ever had, so one that has run out can still be weighed.
+  const lots = new Map<string, { melting: number; wastage: number; making: number }>();
+  for (const row of [...onHand, ...movements.map((m) => ({ melting: m.melting ?? 0, wastage: m.wastage, making: m.making }))]) {
+    lots.set(lotValue(row), { melting: row.melting, wastage: row.wastage, making: row.making });
+  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         back={{ href: "/inventory", label: "Inventory" }}
         title={type.name}
-        subtitle={`Loose ${type.metal?.toLowerCase() ?? "metal"}, kept and sold by weight${type.piecesPerGram ? ` · ${type.piecesPerGram} pieces to the gram` : ""}`}
+        subtitle={`Loose ${type.metal?.toLowerCase() ?? "metal"}, kept in lots${type.counted ? " by piece count and weight" : " by weight"}${type.piecesPerGram ? ` · ${type.piecesPerGram} pieces to the gram` : ""}`}
       />
 
       <Stats items={[
         { name: "In stock", value: grams(weight) },
-        { name: "About", value: about === null ? "-" : `${about} pieces`, note: about === null ? "Pieces to the gram not set" : "By weight, not counted" },
-        { name: "Meltings in stock", value: onHand.length },
+        type.counted
+          ? { name: "Pieces", value: pieces, note: "Counted" }
+          : { name: "About", value: about === null ? "-" : `${about} pieces`, note: about === null ? "Pieces to the gram not set" : "By weight, not counted" },
+        { name: "Lots in stock", value: onHand.length },
       ]} />
+
+      {leftovers.length > 0 && (
+        <Notice tone="warn" title="Weigh these lots">
+          All pieces are sold but the book still shows weight, more than the {WRITE_OFF_LIMIT} g written off by itself.
+          Weigh the box: if it is empty, write the leftover off below; if pieces are still there, do a stock check.
+        </Notice>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <DataTable
-          head={["Melting", "About", "In stock"]}
+          head={type.counted ? ["Lot", "Pieces", "In stock"] : ["Lot", "About", "In stock"]}
           right={[1, 2]}
           empty="None of this type is in stock."
           rows={onHand.map((row) => [
-            `${row.melting}%`,
-            loosePieces(row.weight, type.piecesPerGram) === null ? "-" : `${loosePieces(row.weight, type.piecesPerGram)} pieces`,
+            <span key="l" className="flex flex-wrap items-center gap-2">
+              {lotTerms(row)}
+              {row.leftover && <StatusBadge tone="red">leftover: weigh it</StatusBadge>}
+            </span>,
+            type.counted ? `${row.pieces} pcs` : loosePieces(row.weight, type.piecesPerGram) === null ? "-" : `${loosePieces(row.weight, type.piecesPerGram)} pieces`,
             grams(row.weight),
           ])}
         />
 
-        <Card title="Stock check" hint="Weigh what is in the box and enter it. The book is brought to that weight, and the difference is written below as its own entry.">
-          {meltings.length === 0 ? (
-            <p className="text-sm text-fg-3">Nothing has been added to this type yet. It comes in from a supplier&apos;s purchase bill.</p>
-          ) : (
-            <ActionForm action={checkLooseStock.bind(null, typeId)} submitLabel="Record stock check">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <SelectField label="Melting weighed" name="melting" options={meltings.map((melting) => ({ value: String(melting), label: `${melting}%` }))} />
-                <Grams label="Weight on the scale (g)" name="weight" min="0" required />
-              </div>
-              <Field label="Note (optional)" name="note" type="text" placeholder="e.g. Monthly check" />
-              <DateField />
-            </ActionForm>
+        <div className="space-y-6">
+          {leftovers.length > 0 && (
+            <Card title="Write off a leftover" hint="For a lot whose pieces are all sold, when the box is empty but the book shows weight. The leftover is written as its own entry with your reason, and the lot is closed.">
+              <ActionForm action={writeOffLooseLeftover.bind(null, typeId)} submitLabel="Write off">
+                <SelectField label="Lot" name="lot" options={leftovers.map((row) => ({ value: lotValue(row), label: `${lotTerms(row)} · ${grams(row.weight)} left` }))} />
+                <Field label="Reason" name="reason" type="text" placeholder="e.g. Box empty, scale difference" required />
+                <DateField />
+              </ActionForm>
+            </Card>
           )}
-        </Card>
+
+          <Card title="Stock check" hint={`Weigh${type.counted ? " and count" : ""} what is in the box for one lot. The book is brought to it, and each difference is written below as its own entry.`}>
+            {lots.size === 0 ? (
+              <p className="text-sm text-fg-3">Nothing has been added to this type yet. It comes in from a supplier&apos;s purchase bill.</p>
+            ) : (
+              <ActionForm action={checkLooseStock.bind(null, typeId)} submitLabel="Record stock check">
+                <SelectField label="Lot weighed" name="lot" options={[...lots.entries()].map(([value, lot]) => ({ value, label: lotTerms(lot) }))} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Grams label="Weight on the scale (g)" name="weight" min="0" required />
+                  {type.counted && <Field label="Pieces counted" name="pieces" type="number" step="1" min="0" required />}
+                </div>
+                <Field label="Note (optional)" name="note" type="text" placeholder="e.g. Monthly check" />
+                <DateField />
+              </ActionForm>
+            )}
+          </Card>
+
+          <Card title="Counted in pieces" hint="Phuli and nath are kept by piece count as well as weight; mani by weight alone. When the last piece of a lot is sold, a leftover up to 0.05 g is written off by itself.">
+            <CountedSwitch typeId={typeId} counted={type.counted} action={setLooseCounted} />
+          </Card>
+        </div>
       </div>
 
       <DataTable
-        head={["When", "What", "Note", "Melting", "In", "Out"]}
-        right={[3, 4, 5]}
+        head={["When", "What", "Note", "Lot", "Pieces", "In", "Out"]}
+        right={[4, 5, 6]}
         empty="No movements yet."
         rows={movements.map((row) => [
           dateTime(row.date),
           causes[row.sourceTable ?? ""] ?? row.sourceTable ?? "-",
           row.desc ?? "-",
-          `${row.melting ?? 0}%`,
-          row.direction === "in" ? grams(row.weight) : "",
-          row.direction === "out" ? grams(row.weight) : "",
+          lotTerms({ melting: row.melting ?? 0, wastage: row.wastage, making: row.making }),
+          row.pieces ? `${row.direction === "in" ? "+" : "−"}${row.pieces}` : "",
+          row.direction === "in" && row.weight ? grams(row.weight) : "",
+          row.direction === "out" && row.weight ? grams(row.weight) : "",
         ])}
       />
     </div>

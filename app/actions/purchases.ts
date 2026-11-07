@@ -34,7 +34,7 @@ export async function createSupplier(name: string, contact?: string) {
 }
 
 // A loose type (mani) is kept by weight; piecesPerGram is how many of it weigh a gram, if that is known.
-export async function createItemType(name: string, metal: string, loose = false, piecesPerGram?: number) {
+export async function createItemType(name: string, metal: string, loose = false, piecesPerGram?: number, counted = false) {
   const user = await getCurrentUser();
   try {
     const [newItemType] = await db.insert(itemType).values({
@@ -42,6 +42,7 @@ export async function createItemType(name: string, metal: string, loose = false,
       metal,
       loose,
       piecesPerGram: loose && piecesPerGram && piecesPerGram > 0 ? Math.trunc(piecesPerGram) : null,
+      counted: loose && counted,
     }).returning();
     await logAudit(db, user.id, { tableName: "item_type", recordId: newItemType.id, action: "insert", newValues: newItemType });
     

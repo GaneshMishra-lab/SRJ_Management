@@ -31,6 +31,7 @@ export const SHEETS = [
       { key: 'metal', header: 'Metal', required: true, type: METALS },
       { key: 'loose', header: 'Loose', type: ['yes', 'no'], note: 'yes for mani and anything else sold by weight without a label.' },
       { key: 'piecesPerGram', header: 'Pieces per gram', type: 'int', note: 'Loose types only: 6 for 1x6.' },
+      { key: 'counted', header: 'Counted', type: ['yes', 'no'], note: 'Loose types only: yes for phuli and nath, kept by piece count as well as weight. Empty means no (mani).' },
       { key: 'nextLabel', header: 'Next label', type: 'int', note: 'Labelled types only: the number the app gives the next new piece. Empty means one after the highest label on the Stock pieces sheet. Set it above the labels already used on pieces that were sold, so that no number is given twice.' },
     ],
   },
@@ -56,12 +57,15 @@ export const SHEETS = [
   },
   {
     name: 'Loose stock',
-    about: 'Mani and other loose metal: one row for each type and melting, with the weight on the scale.',
+    about: 'Mani, phuli, nath and other loose stock: one row for each lot (type, melting, wastage and making), with the weight on the scale.',
     columns: [
       { key: 'type', header: 'Item type', required: true, type: 'text' },
       { key: 'metal', header: 'Metal', required: true, type: METALS },
       { key: 'melting', header: 'Melting', required: true, type: 'num', note: 'Purity in percent.' },
+      { key: 'wastage', header: 'Wastage', type: 'num', note: "The supplier's wastage in percent. Empty means 0." },
+      { key: 'making', header: 'Making', type: 'num', note: "The supplier's making in rupees per gram. Empty means 0." },
       { key: 'weight', header: 'Weight', required: true, type: 'num', note: 'Grams.' },
+      { key: 'pieces', header: 'Pieces', type: 'int', note: 'For a counted type (phuli, nath): how many pieces.' },
     ],
   },
   {

@@ -44,6 +44,7 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
       melting: sql<number | null>`coalesce(${itemStock.melting}, ${itemSale.melting})`.mapWith(Number),
       typeName: itemType.name,
       looseTypeId: itemSale.itemType,
+      pieces: itemSale.pieces,
     })
     .from(itemSale)
     .leftJoin(itemStock, eq(itemSale.item, itemStock.id))
@@ -127,7 +128,7 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
                 <RowLink key={line.id} href={href} className={rowClass}>
                   <td className={tdClass}>
                     <Link href={href} className="font-medium text-fg">
-                      {line.stockId ? `${line.typeName ?? "Piece"} #${line.label ?? "-"}` : `${line.typeName ?? "Loose metal"} · loose`}
+                      {line.stockId ? `${line.typeName ?? "Piece"} #${line.label ?? "-"}` : `${line.typeName ?? "Loose metal"} · ${line.pieces ? `${line.pieces} pcs` : "loose"}`}
                     </Link>
                     <span className="ml-2 text-fg-3">{line.melting ?? 0}%</span>
                   </td>

@@ -42,6 +42,8 @@ export const itemType =pgTable("item_type", {
   // Sold loose by weight (mani), not as labelled pieces: its stock is in loose_stock_ledger.
   loose: boolean("loose").default(false).notNull(),
   piecesPerGram: integer("pieces_per_gram"), // 6 for 1x6; only used to show an approximate count
+  // A loose type kept by piece count as well as weight (phuli, nath), not by weight alone (mani).
+  counted: boolean("counted").default(false).notNull(),
 });
 
 export const billPayment = pgTable("bill_payment", {
@@ -212,7 +214,12 @@ export const looseStockLedger = pgTable(
     date: timestamp("date", { mode: "string" }),
     itemType: uuid("item_type").notNull().references(() => itemType.id),
     melting: pct("melting"),
+    // The lot's purchase terms. A lot is kept apart by type, melting, wastage and making, since two
+    // lots at one melting can have cost differently. Extra charges stay on the purchase bill.
+    wastage: pct("wastage").notNull().default(0), // supplier's wastage, percent
+    making: rupees("making").notNull().default(0), // supplier's making, rupees per gram
     direction: text("direction"), // in, out
+    pieces: integer("pieces"), // pieces moved, for a type counted in pieces; null otherwise
     weight: grams("weight"),
     sourceTable: text("source_table"), // item_purchased, item_sale, sale_cancel, stock_check
     sourceId: uuid("source_id"),
@@ -283,6 +290,11 @@ export const itemSale =pgTable("item_sale", {
   itemType: uuid("item_type").references(() => itemType.id),
   weight: grams("weight"),
   melting: pct("melting"),
+  // A loose line's lot (its wastage and making) and the pieces sold, so a cancelled bill puts them
+  // back into the same lot.
+  lotWastage: pct("lot_wastage"),
+  lotMaking: rupees("lot_making"),
+  pieces: integer("pieces"),
   bill: uuid("bill").references(() => itemSaleBill.id),
   rate: rupees("rate"), // purity rate used: daily rate × melting ÷ 100
   makingPct: pct("making_pct"), // wastage included

@@ -22,7 +22,7 @@ import { getCurrentUser, logAudit } from "@/lib/dal";
 import { huidOf, nextLabel } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
-import { looseBalances, looseOfPurchase, recordLoose } from "@/lib/loose";
+import { looseBalances, looseOfPurchase, lotKey, lotTerms, recordLoose } from "@/lib/loose";
 import { round2, round3 } from "@/lib/pricing";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -105,11 +105,15 @@ export async function addPurchasedToLoose(itemId: string, _prev: FormState, form
   const itemTypeId = text(formData, "itemType");
   const weight = round3(num(formData, "weight"));
   const melting = round3(num(formData, "melting"));
+  const wastage = round3(num(formData, "wastage"));
+  const making = round2(num(formData, "making"));
+  const pieces = num(formData, "pieces");
 
   if (!isUuid(itemId)) return { error: "Purchased item not found." };
   if (!isUuid(itemTypeId)) return { error: "Choose an item type." };
   if (weight <= 0) return { error: "Enter the weight on the scale." };
   if (melting <= 0 || melting > 100) return { error: "Melting must be between 0 and 100." };
+  if (wastage < 0 || wastage > 100 || making < 0) return { error: "Wastage and making cannot be below zero." };
 
   let billId: string | undefined;
   try {
@@ -129,8 +133,10 @@ export async function addPurchasedToLoose(itemId: string, _prev: FormState, form
       if (!type?.loose) throw new UserError("Choose an item type that is kept loose by weight.");
       if (type.metal !== purchase?.metal) throw new UserError(`Choose a ${purchase?.metal?.toLowerCase() ?? "matching"} item type; the bill is for ${purchase?.metal ?? "another metal"}.`);
 
+      if (type.counted && !(Number.isInteger(pieces) && pieces > 0)) throw new UserError(`${type.name} is counted in pieces: enter how many pieces came in.`);
+
       const entry = await recordLoose(tx, {
-        itemType: itemTypeId, melting, direction: "in", weight,
+        itemType: itemTypeId, melting, wastage, making, direction: "in", weight, pieces: type.counted ? pieces : null,
         sourceTable: "item_purchased", sourceId: itemId, desc: "Bought from supplier", date,
       });
       await logAudit(tx, user.id, { tableName: "loose_stock_ledger", recordId: entry.id, action: "insert", newValues: entry });
@@ -149,38 +155,59 @@ export async function addPurchasedToLoose(itemId: string, _prev: FormState, form
   return { success: "Added to loose stock." };
 }
 
-// Stock check: the box is weighed and the book is brought to that weight. The difference is
-// written as its own entry, so a loss stays visible instead of being lost in the total.
+// The lot weighed in a stock check or write-off, sent from the form as "melting|wastage|making".
+function lotFrom(itemTypeId: string, formData: FormData) {
+  const [melting, wastage, making] = text(formData, "lot").split("|").map(Number);
+  if (![melting, wastage, making].every(Number.isFinite) || melting <= 0 || melting > 100) return null;
+  return { itemTypeId, melting: round3(melting), wastage: round3(wastage), making: round2(making) };
+}
+
+// Stock check: one lot is weighed (and, for a counted type, counted) and the book is brought to
+// what was found. Each difference is written as its own entry, so a loss stays visible.
 export async function checkLooseStock(itemTypeId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
-  const melting = round3(num(formData, "melting"));
+  const lot = lotFrom(itemTypeId, formData);
   const counted = round3(num(formData, "weight"));
+  const countedPieces = num(formData, "pieces");
   const note = text(formData, "note");
 
   if (!isUuid(itemTypeId)) return { error: "Item type not found." };
-  if (melting <= 0 || melting > 100) return { error: "Choose the melting that was weighed." };
+  if (!lot) return { error: "Choose the lot that was weighed." };
   if (text(formData, "weight") === "" || counted < 0) return { error: "Enter the weight on the scale." };
 
-  let difference = 0;
+  const changes: string[] = [];
   try {
     const date = entryDate(formData);
     await db.transaction(async (tx) => {
       // Lock the type so a sale cannot change the balance while it is being corrected.
       const [type] = await tx.select().from(itemType).where(eq(itemType.id, itemTypeId)).for("update");
       if (!type?.loose) throw new UserError("Item type not found.");
+      if (type.counted && (text(formData, "pieces") === "" || !Number.isInteger(countedPieces) || countedPieces < 0)) {
+        throw new UserError("Enter how many pieces are in the box.");
+      }
 
-      const onHand = (await looseBalances(tx, [itemTypeId])).find((row) => row.melting === melting)?.weight ?? 0;
-      difference = round3(counted - onHand);
-      if (difference === 0) return;
-
-      const entry = await recordLoose(tx, {
-        itemType: itemTypeId, melting, direction: difference > 0 ? "in" : "out", weight: Math.abs(difference),
-        sourceTable: "stock_check", desc: note || (difference > 0 ? "Stock check: more on the scale" : "Stock check: short on the scale"), date,
-      });
-      await logAudit(tx, user.id, {
-        tableName: "loose_stock_ledger", recordId: entry.id, action: "insert",
-        newValues: { ...entry, bookWeight: onHand, countedWeight: counted },
-      });
+      const found = (await looseBalances(tx, [itemTypeId])).find((row) => lotKey(row) === lotKey(lot));
+      const weightGap = round3(counted - (found?.weight ?? 0));
+      const pieceGap = type.counted ? countedPieces - (found?.pieces ?? 0) : 0;
+      const terms = { itemType: itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making, sourceTable: "stock_check", date };
+      const why = (more: boolean) => note || (more ? "Stock check: more than the book" : "Stock check: short of the book");
+      // Weight and pieces can be out in opposite directions, so each gets its own entry then.
+      const moves: { direction: "in" | "out"; weight: number; pieces: number | null }[] = [];
+      if (weightGap !== 0 && pieceGap !== 0 && Math.sign(weightGap) === Math.sign(pieceGap)) {
+        moves.push({ direction: weightGap > 0 ? "in" : "out", weight: Math.abs(weightGap), pieces: Math.abs(pieceGap) });
+      } else {
+        if (weightGap !== 0) moves.push({ direction: weightGap > 0 ? "in" : "out", weight: Math.abs(weightGap), pieces: null });
+        if (pieceGap !== 0) moves.push({ direction: pieceGap > 0 ? "in" : "out", weight: 0, pieces: Math.abs(pieceGap) });
+      }
+      for (const move of moves) {
+        const entry = await recordLoose(tx, { ...terms, ...move, desc: why(move.direction === "in") });
+        await logAudit(tx, user.id, {
+          tableName: "loose_stock_ledger", recordId: entry.id, action: "insert",
+          newValues: { ...entry, bookWeight: found?.weight ?? 0, countedWeight: counted, bookPieces: found?.pieces ?? 0, countedPieces: type.counted ? countedPieces : undefined },
+        });
+      }
+      if (weightGap !== 0) changes.push(`${weightGap > 0 ? "+" : "−"}${Math.abs(weightGap)} g`);
+      if (pieceGap !== 0) changes.push(`${pieceGap > 0 ? "+" : "−"}${Math.abs(pieceGap)} pcs`);
     });
   } catch (error) {
     return fail(error, "Could not record the stock check.");
@@ -189,8 +216,64 @@ export async function checkLooseStock(itemTypeId: string, _prev: FormState, form
   revalidatePath("/inventory");
   revalidatePath(`/inventory/loose/${itemTypeId}`);
   revalidatePath("/dashboard");
-  if (difference === 0) return { success: "The book already matches the scale." };
-  return { success: `Stock corrected by ${difference > 0 ? "+" : "−"}${Math.abs(difference)} g.` };
+  if (changes.length === 0) return { success: "The book already matches the box." };
+  return { success: `Stock corrected by ${changes.join(" and ")}.` };
+}
+
+// A counted lot whose pieces are all gone but whose book still shows weight beyond the automatic
+// write-off limit: someone has weighed it and writes the leftover off by hand, with a reason.
+export async function writeOffLooseLeftover(itemTypeId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  const lot = lotFrom(itemTypeId, formData);
+  const reason = text(formData, "reason");
+  if (!isUuid(itemTypeId) || !lot) return { error: "Choose the lot." };
+  if (!reason) return { error: "Write why the leftover is written off." };
+
+  let gone = 0;
+  try {
+    const date = entryDate(formData);
+    await db.transaction(async (tx) => {
+      const [type] = await tx.select().from(itemType).where(eq(itemType.id, itemTypeId)).for("update");
+      if (!type?.loose) throw new UserError("Item type not found.");
+      const found = (await looseBalances(tx, [itemTypeId])).find((row) => lotKey(row) === lotKey(lot));
+      if (!found?.leftover) throw new UserError("That lot has no leftover to write off. Use the stock check instead.");
+      gone = found.weight;
+      const entry = await recordLoose(tx, {
+        itemType: itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making,
+        direction: gone > 0 ? "out" : "in", weight: Math.abs(gone),
+        sourceTable: "weighing_difference", desc: `Leftover written off: ${reason}`, date,
+      });
+      await logAudit(tx, user.id, {
+        tableName: "loose_stock_ledger", recordId: entry.id, action: "insert",
+        newValues: { ...entry, lot: `${type.name} ${lotTerms(lot)}`, bookWeight: gone },
+      });
+    });
+  } catch (error) {
+    return fail(error, "Could not write off the leftover.");
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/loose/${itemTypeId}`);
+  revalidatePath("/dashboard");
+  return { success: `${Math.abs(gone)} g written off; the lot is closed.` };
+}
+
+// Whether a loose type is kept by piece count as well as weight (phuli, nath) or by weight alone.
+export async function setLooseCounted(itemTypeId: string, counted: boolean): Promise<FormState> {
+  const user = await getCurrentUser();
+  if (!isUuid(itemTypeId)) return { error: "Item type not found." };
+  try {
+    const [before] = await db.select().from(itemType).where(eq(itemType.id, itemTypeId));
+    if (!before?.loose) return { error: "Item type not found." };
+    if (before.counted === counted) return { success: "No change." };
+    await db.update(itemType).set({ counted, updatedAt: new Date() }).where(eq(itemType.id, itemTypeId));
+    await logAudit(db, user.id, { tableName: "item_type", recordId: itemTypeId, action: "update", oldValues: { counted: before.counted }, newValues: { counted } });
+  } catch (error) {
+    return fail(error, "Could not change the setting.");
+  }
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/loose/${itemTypeId}`);
+  return { success: counted ? "Now counted in pieces as well as weight." : "Now kept by weight alone." };
 }
 
 // The HUID can be put on, corrected or taken off at any point in a piece's life, sold or melted

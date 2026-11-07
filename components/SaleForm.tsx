@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { createSale } from "@/app/actions/sales";
-import { GST_PCT, priceSaleLine, purityRate, round2 } from "@/lib/pricing";
+import { GST_PCT, priceSaleLine, purityRate, round2, round3 } from "@/lib/pricing";
 import { dateOnly, grams, inr } from "@/lib/format";
 import { Card, Field, Notice, SelectField, SummaryRow } from "@/components/ui";
 import { PieceSearch } from "@/components/PieceSearch";
@@ -29,11 +29,19 @@ type Loose = {
   typeName: string | null;
   metal: string | null;
   piecesPerGram: number | null;
+  counted: boolean; // kept by piece count as well as weight (phuli, nath)
   melting: number;
+  wastage: number; // the lot's purchase terms; together with type and melting they name the lot
+  making: number;
   weight: number;
+  pieces: number;
 };
-type LooseLine = { itemTypeId: string; melting: number; weight: number; rate: number; makingPct: number };
-const looseKey = (row: { itemTypeId: string; melting: number }) => `${row.itemTypeId}|${row.melting}`;
+type LooseLine = { itemTypeId: string; melting: number; wastage: number; making: number; weight: number; pieces: number | null; rate: number; makingPct: number };
+const looseKey = (row: { itemTypeId: string; melting: number; wastage: number; making: number }) => `${row.itemTypeId}|${row.melting}|${row.wastage}|${row.making}`;
+// A lot is named by its terms: "76% · wastage 4% · making ₹300/g".
+const lotTerms = (row: { melting: number; wastage: number; making: number }) =>
+  [`${row.melting}%`, row.wastage ? `wastage ${row.wastage}%` : null, row.making ? `making ₹${row.making}/g` : null].filter(Boolean).join(" · ");
+const inStock = (row: Loose) => `${row.counted ? `${row.pieces} pcs · ` : ""}${grams(row.weight)} in stock`;
 type OldGold = { metal: string; weight: number; melting: number; amt: number };
 type ReadyOrder = {
   id: string;
@@ -127,15 +135,18 @@ export function SaleForm({
   };
 
   const looseByKey = new Map(loose.map((row) => [looseKey(row), row]));
-  const looseName = (row: Loose) => `${row.typeName ?? "Loose"} · ${row.melting}%`;
+  const looseName = (row: Loose) => `${row.typeName ?? "Loose"} · ${lotTerms(row)}`;
   const looseAvailable = loose.filter((row) => !looseLines.some((line) => looseKey(line) === looseKey(row)));
   const addLoose = (key: string) => {
     const row = looseByKey.get(key);
     if (!row) return;
     const fineRate = row.metal === "Silver" ? rates.Silver : rates.Gold;
-    setLooseLines([...looseLines, { itemTypeId: row.itemTypeId, melting: row.melting, weight: 0, rate: purityRate(fineRate ?? 0, row.melting), makingPct: 0 }]);
+    setLooseLines([...looseLines, {
+      itemTypeId: row.itemTypeId, melting: row.melting, wastage: row.wastage, making: row.making,
+      weight: 0, pieces: row.counted ? 1 : null, rate: purityRate(fineRate ?? 0, row.melting), makingPct: 0,
+    }]);
   };
-  const updateLoose = (index: number, field: "weight" | "rate" | "makingPct", value: number) => {
+  const updateLoose = (index: number, field: "weight" | "pieces" | "rate" | "makingPct", value: number) => {
     setLooseLines(looseLines.map((line, i) => (i === index ? { ...line, [field]: value } : line)));
   };
 
@@ -352,12 +363,12 @@ export function SaleForm({
         </Card>
 
         {loose.length > 0 && (
-          <Card title="Loose metal" hint="Mani and other metal sold by weight, out of the stock of its type and melting.">
+          <Card title="Loose metal" hint="Mani, phuli, nath and other loose stock, sold by weight out of one lot. Phuli and nath are counted in pieces too.">
             <SelectField label="Add loose metal" value="" onChange={(e) => addLoose(e.target.value)}>
               <option value="">{looseAvailable.length === 0 ? "No more loose metal available" : "Select a type..."}</option>
               {looseAvailable.map((row) => (
                 <option key={looseKey(row)} value={looseKey(row)}>
-                  {looseName(row)} · {row.metal} · {grams(row.weight)} in stock
+                  {looseName(row)} · {row.metal} · {inStock(row)}
                 </option>
               ))}
             </SelectField>
@@ -372,7 +383,7 @@ export function SaleForm({
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-fg">{looseName(row)}</p>
                           <p className="text-[13px] text-fg-3">
-                            {row.metal} · {grams(row.weight)} in stock
+                            {row.metal} · {inStock(row)}
                             {row.piecesPerGram && line.weight > 0 ? ` · about ${Math.round(line.weight * row.piecesPerGram)} pieces on this bill` : ""}
                           </p>
                         </div>
@@ -389,13 +400,26 @@ export function SaleForm({
                           </button>
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className={`grid gap-4 ${row.counted ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+                        {row.counted && (
+                          <Field
+                            label="Pieces"
+                            type="number"
+                            step="1"
+                            min="1"
+                            max={row.pieces}
+                            value={line.pieces || ""}
+                            onChange={(e) => updateLoose(index, "pieces", Number(e.target.value))}
+                            hint={line.pieces === row.pieces ? "The last of this lot: a small leftover weight is written off." : undefined}
+                            required
+                          />
+                        )}
                         <Field
                           label="Weight (g)"
                           type="number"
                           step="0.001"
                           min="0.001"
-                          max={row.weight}
+                          max={row.counted && line.pieces === row.pieces ? round3(row.weight + 0.05) : row.weight}
                           value={line.weight || ""}
                           onChange={(e) => updateLoose(index, "weight", Number(e.target.value))}
                           required

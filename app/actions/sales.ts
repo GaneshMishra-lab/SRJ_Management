@@ -16,7 +16,7 @@ import {
   itemType,
   oldItem,
 } from "@/db/schema/sales";
-import { looseBalances, recordLoose } from "@/lib/loose";
+import { closeEmptyLot, looseBalances, lotKey, lotTerms, recordLoose, WRITE_OFF_LIMIT } from "@/lib/loose";
 import { bcTotals } from "@/lib/bc";
 import { getCurrentUser, logAudit, requireOwner } from "@/lib/dal";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
@@ -33,8 +33,8 @@ export type SalePayload = {
   // Delivering an order: its piece must be on the bill and its advance is applied.
   orderId?: string;
   items: Array<{ stockId: string; rate: number; makingPct: number }>;
-  // Loose metal (mani) sold by weight out of the stock of its type and melting.
-  loose?: Array<{ itemTypeId: string; melting: number; weight: number; rate: number; makingPct: number }>;
+  // Loose stock sold by weight out of one lot (type, melting, wastage, making); pieces too for a counted type.
+  loose?: Array<{ itemTypeId: string; melting: number; wastage: number; making: number; weight: number; pieces?: number | null; rate: number; makingPct: number }>;
   // Old metal the customer gives in exchange, set against the bill.
   oldGold?: Array<{ metal: string; weight: number; melting: number; amt: number }>;
   // Matured BCs of the customer spent on the bill, and how much of each.
@@ -72,7 +72,10 @@ export async function createSale(payload: SalePayload) {
     const loose = (payload.loose ?? []).map((line) => ({
       itemTypeId: line.itemTypeId,
       melting: round3(line.melting),
+      wastage: round3(line.wastage || 0),
+      making: round2(line.making || 0),
       weight: round3(line.weight),
+      pieces: line.pieces ?? null,
       rate: round2(line.rate),
       makingPct: line.makingPct,
     }));
@@ -86,7 +89,10 @@ export async function createSale(payload: SalePayload) {
     if (loose.some((line) => !isUuid(line.itemTypeId) || !(line.weight > 0) || !(line.rate > 0) || !(line.makingPct >= 0))) {
       throw new UserError("Every loose item needs a weight and a rate above zero, and a making % of zero or more.");
     }
-    if (new Set(loose.map((line) => `${line.itemTypeId}|${line.melting}`)).size !== loose.length) {
+    if (loose.some((line) => line.pieces !== null && !(Number.isInteger(line.pieces) && line.pieces > 0))) {
+      throw new UserError("Pieces sold must be a whole number above zero.");
+    }
+    if (new Set(loose.map(lotKey)).size !== loose.length) {
       throw new UserError("A loose item is listed twice. Put its whole weight on one line.");
     }
     const discount = round2(payload.discount || 0);
@@ -146,16 +152,25 @@ export async function createSale(payload: SalePayload) {
       // Loose metal: lock its types so two bills cannot both sell the same grams, then check what is there.
       if (loose.length > 0) {
         const typeIds = [...new Set(loose.map((line) => line.itemTypeId))];
-        const types = await tx.select({ id: itemType.id, name: itemType.name }).from(itemType)
+        const types = await tx.select({ id: itemType.id, name: itemType.name, counted: itemType.counted }).from(itemType)
           .where(and(inArray(itemType.id, typeIds), eq(itemType.loose, true)))
           .for("update");
         const onHand = await looseBalances(tx, typeIds);
         for (const line of loose) {
           const type = types.find((row) => row.id === line.itemTypeId);
           if (!type) throw new UserError("A loose item on this bill is not valid.");
-          const have = onHand.find((row) => row.itemTypeId === line.itemTypeId && row.melting === line.melting)?.weight ?? 0;
-          if (line.weight > have) {
-            throw new UserError(`Only ${round3(Math.max(0, have))} g of ${type.name} at ${line.melting}% melting is in stock.`);
+          const lot = onHand.find((row) => lotKey(row) === lotKey(line));
+          const have = lot?.weight ?? 0;
+          const name = `${type.name} (${lotTerms(line)})`;
+          if (type.counted) {
+            if (!line.pieces) throw new UserError(`Enter how many pieces of ${name} are sold.`);
+            if (line.pieces > (lot?.pieces ?? 0)) throw new UserError(`Only ${Math.max(0, lot?.pieces ?? 0)} pieces of ${name} are in stock.`);
+          } else line.pieces = null;
+          // Selling the last pieces of a lot, the scale may read a little over the book: allow it
+          // up to the write-off limit, and the lot is closed at zero after the sale.
+          const lastPieces = type.counted && line.pieces === lot?.pieces;
+          if (line.weight > have + (lastPieces ? WRITE_OFF_LIMIT : 0) + 0.0005) {
+            throw new UserError(`Only ${round3(Math.max(0, have))} g of ${name} is in stock.`);
           }
         }
       }
@@ -200,6 +215,9 @@ export async function createSale(payload: SalePayload) {
         itemType: line.itemTypeId,
         weight: line.weight,
         melting: line.melting,
+        lotWastage: line.wastage,
+        lotMaking: line.making,
+        pieces: line.pieces,
         rate: line.rate,
         makingPct: line.makingPct,
         ...priceSaleLine({ netWeight: line.weight, rate: line.rate, makingPct: line.makingPct }),
@@ -249,10 +267,13 @@ export async function createSale(payload: SalePayload) {
       if (looseLines.length > 0) {
         const soldLoose = await tx.insert(itemSale).values(looseLines.map((line) => ({ ...line, bill: saleBill.id }))).returning();
         for (const line of soldLoose) {
+          const lot = { itemTypeId: line.itemType!, melting: line.melting ?? 0, wastage: line.lotWastage ?? 0, making: line.lotMaking ?? 0 };
           await recordLoose(tx, {
-            itemType: line.itemType!, melting: line.melting ?? 0, direction: "out", weight: line.weight ?? 0,
+            itemType: lot.itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making,
+            direction: "out", weight: line.weight ?? 0, pieces: line.pieces,
             sourceTable: "item_sale", sourceId: line.id, desc: "Sold on a sale bill", date,
           });
+          await closeEmptyLot(tx, lot, date);
         }
       }
 
@@ -418,7 +439,8 @@ export async function cancelSale(saleId: string, _prev: FormState, formData: For
       const looseBack = lines.filter((line) => !line.item && line.itemType);
       for (const line of looseBack) {
         await recordLoose(tx, {
-          itemType: line.itemType!, melting: line.melting ?? 0, direction: "in", weight: line.weight ?? 0,
+          itemType: line.itemType!, melting: line.melting ?? 0, wastage: line.lotWastage ?? 0, making: line.lotMaking ?? 0,
+          direction: "in", weight: line.weight ?? 0, pieces: line.pieces,
           sourceTable: "sale_cancel", sourceId: line.id, desc: `Cancelled sale bill of ${dateOnly(saleBill.date)}: back in stock`, date,
         });
       }

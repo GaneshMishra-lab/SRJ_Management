@@ -203,8 +203,10 @@ function build(data, existing) {
       else if (r.nextLabel) topLabel.set(known.id, r.nextLabel - 1);
       continue;
     }
-    const row = { name: r.name.trim(), metal: r.metal, loose, pieces_per_gram: loose ? r.piecesPerGram : null, next_label: 1 };
-    types.set(key, { id: add('item_type', row), metal: r.metal, loose, isNew: true });
+    if (!loose && r.counted === 'yes') problem('Item types', r.row, '"Counted" is only for loose types');
+    const counted = loose && r.counted === 'yes';
+    const row = { name: r.name.trim(), metal: r.metal, loose, pieces_per_gram: loose ? r.piecesPerGram : null, counted, next_label: 1 };
+    types.set(key, { id: add('item_type', row), metal: r.metal, loose, counted, isNew: true });
     if (r.nextLabel && !loose) topLabel.set(types.get(key).id, r.nextLabel - 1);
   }
   const typeOf = (sheet, r, loose) => {
@@ -262,9 +264,13 @@ function build(data, existing) {
     const type = typeOf('Loose stock', r, true);
     above0('Loose stock', r.row, 'Weight', r.weight);
     percent('Loose stock', r.row, 'Melting', r.melting);
+    if ((r.wastage ?? 0) > 100) problem('Loose stock', r.row, '"Wastage" is a percentage');
+    if (type?.counted && !(r.pieces > 0)) problem('Loose stock', r.row, `${r.type} is counted in pieces: give "Pieces"`);
+    if (type && !type.counted && r.pieces !== null) problem('Loose stock', r.row, `${r.type} is kept by weight alone; leave "Pieces" empty, or mark the type Counted`);
     if (!type || r.weight === null || r.melting === null) continue;
     add('loose_stock_ledger', {
-      date: noon(eve), item_type: type.id, melting: round3(r.melting), direction: 'in', weight: round3(r.weight),
+      date: noon(eve), item_type: type.id, melting: round3(r.melting), wastage: round3(r.wastage ?? 0), making: round2(r.making ?? 0),
+      direction: 'in', weight: round3(r.weight), pieces: type.counted ? r.pieces : null,
       source_table: 'opening', source_id: null, desc: 'Opening stock',
     });
   }
@@ -484,7 +490,7 @@ try {
 
   const existing = {
     entities: await query('SELECT id, name, type FROM entity'),
-    types: await query('SELECT id, name, metal, loose FROM item_type'),
+    types: await query('SELECT id, name, metal, loose, counted FROM item_type'),
     stock: await query('SELECT item_type, label, huid FROM item_stock'),
     categories: await query('SELECT id, name FROM misc_category'),
     miscItems: await query('SELECT id, category, name, unit FROM misc_item'),

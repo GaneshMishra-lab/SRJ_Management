@@ -7,7 +7,7 @@ import { bill, itemPurchased, itemStock, itemType, looseStockLedger } from "@/db
 import { addPurchasedToLoose, addPurchasedToStock } from "@/app/actions/stock";
 import { looseFromPurchase, looseOfPurchase } from "@/lib/loose";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DateField, Field, Grams, Notice, PageHeader, Percent, SelectField, Stats } from "@/components/ui";
+import { Card, DateField, Field, Grams, Notice, PageHeader, Percent, Rupees, SelectField, Stats } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateOnly, grams, inr } from "@/lib/format";
@@ -35,7 +35,7 @@ export default async function LabelItemPage({ params }: { params: Promise<{ item
     .where(eq(itemStock.item, itemId));
   // Loose metal (mani) is not labelled: it went into the stock of its type by weight.
   const [inLoose] = await db
-    .select({ typeId: itemType.id, typeName: itemType.name, weight: looseStockLedger.weight, melting: looseStockLedger.melting })
+    .select({ typeId: itemType.id, typeName: itemType.name, weight: looseStockLedger.weight, melting: looseStockLedger.melting, wastage: looseStockLedger.wastage, making: looseStockLedger.making, pieces: looseStockLedger.pieces })
     .from(looseStockLedger)
     .innerJoin(itemType, eq(looseStockLedger.itemType, itemType.id))
     .where(looseOfPurchase(itemId));
@@ -84,7 +84,7 @@ export default async function LabelItemPage({ params }: { params: Promise<{ item
       ) : inLoose ? (
         <>
           <Notice title={`In loose stock of ${inLoose.typeName ?? "its type"}`}>
-            {grams(inLoose.weight)} at {inLoose.melting ?? 0}% melting was added to the stock of this type. It is sold by weight and carries no label.
+            {inLoose.pieces ? `${inLoose.pieces} pieces, ` : ""}{grams(inLoose.weight)} was added to the lot at {inLoose.melting ?? 0}% melting, {inLoose.wastage}% wastage and ₹{inLoose.making}/g making. It is sold by weight and carries no label.
           </Notice>
           <div className="flex flex-wrap gap-2">
             {next && <Link href={`/inventory/label/${next.id}`} className={btn()}>Add the next item on this bill</Link>}
@@ -93,12 +93,15 @@ export default async function LabelItemPage({ params }: { params: Promise<{ item
           </div>
         </>
       ) : row.loose ? (
-        <Card title="Add to loose stock" hint="Filled in from the bill. Correct the weight to what the scale shows; the bill keeps its own figures. The weight joins the stock of its type at this melting, and no label is given.">
+        <Card title="Add to loose stock" hint="Filled in from the bill. Correct the weight to what the scale shows; the bill keeps its own figures. It joins the lot of its type with the same melting, wastage and making, and no label is given. Extra charges stay on the bill.">
           <ActionForm action={addPurchasedToLoose.bind(null, itemId)} submitLabel="Add to loose stock">
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <SelectField label="Item type" name="itemType" className="col-span-2" defaultValue={item.itemType ?? undefined} options={types.map((type) => ({ value: type.id, label: type.name }))} />
+              <SelectField label="Item type" name="itemType" className="col-span-2" defaultValue={item.itemType ?? undefined} options={types.map((type) => ({ value: type.id, label: `${type.name}${type.counted ? " (counted)" : ""}` }))} />
               <Grams label="Weight (g)" name="weight" defaultValue={item.netWeight ?? undefined} required />
+              <Field label="Pieces" name="pieces" type="number" step="1" min="1" hint="For a counted type (phuli, nath)." />
               <Percent label="Melting (%)" name="melting" min="0.001" defaultValue={item.melting ?? undefined} required />
+              <Percent label="Wastage (%)" name="wastage" min="0" defaultValue={item.wastage ?? 0} />
+              <Rupees label="Making (₹ per g)" name="making" min="0" defaultValue={item.making ?? 0} />
             </div>
             <DateField />
           </ActionForm>
