@@ -5,7 +5,8 @@ import { entity } from "@/db/schema/entities";
 import { goldLoan, goldLoanPayment } from "@/db/schema/sales";
 import { createGoldLoan } from "@/app/actions/goldloans";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, EntityFields, Field, Grams, linkClass, ModeField, PageHeader, Percent, Rupees, StatusBadge } from "@/components/ui";
+import { ActionPanels } from "@/components/ActionPanels";
+import { DataTable, DateField, EntityFields, Field, Grams, linkClass, ModeField, PageHeader, Percent, Rupees, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 import { dateOnly, grams, inr } from "@/lib/format";
@@ -36,20 +37,23 @@ export default async function GoldLoansPage() {
     <div className="space-y-6">
       <PageHeader title="Gold Loans" subtitle="Money lent against pledged ornaments (girvi), at simple monthly interest." />
 
-      <Card title="Give a gold loan">
-        <ActionForm action={createGoldLoan} submitLabel="Give loan">
-          <EntityFields label="Customer" entities={customers} />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="col-span-2"><Field label="Items pledged" name="item" type="text" placeholder="e.g. 2 bangles, 1 chain" required /></div>
-            <div className="col-span-2"><Field label="Notes (purity, marks)" name="desc" type="text" /></div>
-            <Grams label="Total weight (g)" name="weight" required />
-            <Rupees label="Loan amount (₹)" name="amt" required />
-            <Percent label="Interest (% per month)" name="interest" required />
-            <ModeField label="Paid from" />
-          </div>
-          <DateField />
-        </ActionForm>
-      </Card>
+      <ActionPanels panels={[{
+        key: "new", label: "Give gold loan", title: "Give a gold loan", wide: true,
+        children: (
+          <ActionForm action={createGoldLoan} submitLabel="Give loan">
+            <EntityFields label="Customer" entities={customers} />
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="col-span-2"><Field label="Items pledged" name="item" type="text" placeholder="e.g. 2 bangles, 1 chain" required /></div>
+              <div className="col-span-2"><Field label="Notes (purity, marks)" name="desc" type="text" /></div>
+              <Grams label="Total weight (g)" name="weight" required />
+              <Rupees label="Loan amount (₹)" name="amt" required />
+              <Percent label="Interest (% per month)" name="interest" required />
+              <ModeField label="Paid from" />
+            </div>
+            <DateField />
+          </ActionForm>
+        ),
+      }]} />
 
       <DataTable
         head={["Date", "Customer", "Pledge", "Weight", "Loan", "Principal due", "Rate", "Interest due", "Penalty", "Status"]}

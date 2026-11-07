@@ -11,6 +11,7 @@ type Panel = {
   title: string;
   hint?: React.ReactNode;
   danger?: boolean;
+  wide?: boolean; // for forms laid out in several columns
   children: React.ReactNode;
 };
 
@@ -43,7 +44,7 @@ export function ActionPanels({ panels }: { panels: Panel[] }) {
           key={current.key}
           title={current.title}
           hint={current.hint}
-          className="max-w-2xl"
+          className={current.wide ? "" : "max-w-2xl"}
           action={
             <button type="button" aria-label="Close" title="Close" onClick={() => setOpen(null)} className={`-mt-1.5 -mr-2 ${iconButtonClass}`}>
               <X className="h-4 w-4" aria-hidden="true" />

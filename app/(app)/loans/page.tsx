@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { addLoanEntry } from "@/app/actions/loans";
 import { ActionForm } from "@/components/ActionForm";
+import { ActionPanels } from "@/components/ActionPanels";
 import { TableFilter } from "@/components/TableFilter";
-import { Card, DataTable, DateField, EntityFields, Field, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
+import { DataTable, DateField, EntityFields, Field, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { asc, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
@@ -83,6 +84,27 @@ export default async function LoansPage() {
       {sections.map((section) => (
         <div key={section.kind} className="space-y-4" data-filter-group>
           <h2 className="font-serif text-[1.375rem] font-medium text-fg">{section.title}</h2>
+          <ActionPanels panels={[{
+            key: section.kind, label: section.formTitle, title: section.formTitle,
+            hint: section.kind === "lend"
+              ? "Cash borrowed with nothing else behind it, and money a customer leaves with the shop (not against an order). If the person owes the shop anything (sale bills, a loan, a repair), it pays that first; only the rest is held. A sale bill can later be paid out of what is held."
+              : "Cash lent with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line below.",
+            children: (
+              <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
+                <SelectField label="Entry" name="type" options={[section.first, { value: "repayment", label: section.repay }]} />
+                <EntityFields label="Person" entities={people} newLabel="Or a new person" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Rupees label="Amount (₹)" name="amt" required />
+                  <ModeField label="Cash or online" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Field label="Note (optional)" name="note" type="text" placeholder={section.kind === "lend" ? "e.g. to be used with BC no. 14" : "e.g. Ram wedding"} />
+                  <Field label="Remind on (optional)" name="remindOn" type="date" hint="From this day the account is flagged with a red ! until it is settled." />
+                </div>
+                <DateField />
+              </ActionForm>
+            ),
+          }]} />
           <p data-filter-none hidden className="text-sm text-fg-3">Nothing here matches the search.</p>
           <DataTable
             head={["Person", "Kind", "Date", "Amount", section.owes]}
@@ -103,26 +125,6 @@ export default async function LoansPage() {
               row.due > 0 ? <span key="o" className="font-medium text-fg">{inr(row.due)}</span> : <span key="o" className="text-fg-3">Settled</span>,
             ])}
           />
-          <Card
-            title={section.formTitle}
-            hint={section.kind === "lend"
-              ? "Cash borrowed with nothing else behind it, and money a customer leaves with the shop (not against an order). If the person owes the shop anything (sale bills, a loan, a repair), it pays that first; only the rest is held. A sale bill can later be paid out of what is held."
-              : "Cash lent with nothing else behind it. Dues of the other kinds are paid on their own screens: open the line above."}
-          >
-            <ActionForm action={addLoanEntry.bind(null, section.kind)} submitLabel="Record">
-              <SelectField label="Entry" name="type" options={[section.first, { value: "repayment", label: section.repay }]} />
-              <EntityFields label="Person" entities={people} newLabel="Or a new person" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Rupees label="Amount (₹)" name="amt" required />
-                <ModeField label="Cash or online" />
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Note (optional)" name="note" type="text" placeholder={section.kind === "lend" ? "e.g. to be used with BC no. 14" : "e.g. Ram wedding"} />
-                <Field label="Remind on (optional)" name="remindOn" type="date" hint="From this day the account is flagged with a red ! until it is settled." />
-              </div>
-              <DateField />
-            </ActionForm>
-          </Card>
         </div>
       ))}
       </TableFilter>
