@@ -13,6 +13,7 @@ import { round2 } from "@/lib/pricing";
 import { dateOnly, dateTime, grams, inr, istDate, istDayRange } from "@/lib/format";
 import { cashBalances, getCurrentRates } from "@/lib/ledger";
 import { looseBalances } from "@/lib/loose";
+import { dueReminders } from "@/lib/reminders";
 import { btn, hintClass, inputClass, labelClass, linkClass } from "@/lib/styles";
 
 // "Good morning" by the shop's clock, not the server's.
@@ -77,6 +78,7 @@ export default async function Dashboard() {
     .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
 
   const recent = await db.select().from(cashLedger).orderBy(desc(cashLedger.date), desc(cashLedger.createdAt)).limit(8);
+  const reminders = await dueReminders(today);
 
   return (
     <div className="space-y-6">
@@ -91,6 +93,30 @@ export default async function Dashboard() {
         { name: "Gold in stock", value: grams(gold?.weight), note: `${gold?.pieces ?? 0} pieces · silver ${grams(silver?.weight)} in ${silver?.pieces ?? 0}${looseGold || looseSilver ? ` · loose: gold ${grams(looseGold)}, silver ${grams(looseSilver)}` : ""}` },
         { name: "Today's sales", value: inr(todaySales?.total), note: `${todaySales?.bills ?? 0} ${todaySales?.bills === 1 ? "bill" : "bills"}` },
       ]} />
+
+      {reminders.length > 0 && (
+        <Card
+          title={<span className="flex items-center gap-2"><span className="grid h-6 w-6 animate-pulse place-items-center rounded-full bg-bad text-sm font-bold text-white" aria-hidden="true">!</span>Reminders due</span>}
+          hint="Loans and सावकारी whose reminder day has come. Settle them, or move the reminder on the account."
+          action={<Link href="/loans" className={`text-sm ${linkClass}`}>Loans</Link>}
+          className="border-bad/40"
+          flush
+        >
+          <ul>
+            {reminders.map((row) => (
+              <li key={row.id} className="border-t border-line">
+                <Link href={row.href} className="flex items-center justify-between gap-4 px-5 py-3 transition-colors hover:bg-fg/3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-fg">{row.party ?? "Unknown"} <span className="text-fg-3">· {row.kind === "given" ? "owes the shop" : "the shop owes"}</span></p>
+                    <p className="text-[13px] text-bad">Reminder {row.remindOn === today ? "today" : `since ${dateOnly(row.remindOn)}`}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium text-fg tabular-nums">{inr(row.due)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {dues.length > 0 && (
         <Card

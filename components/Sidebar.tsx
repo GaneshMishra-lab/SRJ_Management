@@ -82,10 +82,12 @@ export function Sidebar({
   user,
   defaultCollapsed = false,
   theme,
+  alerts = {},
 }: {
   user: { name: string; role: string };
   defaultCollapsed?: boolean;
   theme: Theme;
+  alerts?: Record<string, number>; // a count of things needing attention, by nav link, shown as a red "!" badge
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -169,16 +171,25 @@ export function Sidebar({
               )}
               {section.items.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                const alert = alerts[item.href] ?? 0;
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    title={collapsed ? item.name : undefined}
+                    title={collapsed ? (alert > 0 ? `${item.name}: ${alert} need attention` : item.name) : undefined}
                     aria-current={isActive ? "page" : undefined}
                     className={`${itemClass} ${centred} ${isActive ? "bg-fg/8 font-medium text-fg" : "text-fg-2 hover:bg-fg/5 hover:text-fg"}`}
                   >
-                    <item.icon className={`h-4.5 w-4.5 shrink-0 ${isActive ? "text-fg" : "text-fg-3 group-hover:text-fg-2"}`} strokeWidth={1.75} aria-hidden="true" />
+                    <span className="relative shrink-0">
+                      <item.icon className={`h-4.5 w-4.5 ${isActive ? "text-fg" : "text-fg-3 group-hover:text-fg-2"}`} strokeWidth={1.75} aria-hidden="true" />
+                      {alert > 0 && collapsed && <span className="absolute -top-1 -right-1 hidden h-2.5 w-2.5 animate-pulse rounded-full bg-bad ring-2 ring-page lg:block" aria-hidden="true" />}
+                    </span>
                     <span className={whenOpen}>{item.name}</span>
+                    {alert > 0 && (
+                      <span className={`ml-auto inline-flex h-5 min-w-5 animate-pulse items-center justify-center gap-0.5 rounded-full bg-bad px-1.5 text-[11px] font-bold text-white ${whenOpen}`}>
+                        !<span className="sr-only"> {alert} need attention:</span> {alert}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

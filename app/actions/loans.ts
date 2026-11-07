@@ -6,8 +6,8 @@ import { db } from "@/db";
 import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
 import { getCurrentUser, logAudit } from "@/lib/dal";
 import { resolveEntity } from "@/lib/entities";
-import { entryDate, fail, FormState, num, text, UserError } from "@/lib/form";
-import { inr } from "@/lib/format";
+import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
+import { dateOnly, inr } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2 } from "@/lib/pricing";
 import { payOldDues } from "@/lib/sale-payments";
@@ -22,8 +22,11 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
   const repayment = text(formData, "type") === "repayment";
   const whole = round2(num(formData, "amt"));
   const mode = text(formData, "mode");
+  const note = text(formData, "note") || null;
+  const remindOn = text(formData, "remindOn");
   if (whole <= 0) return { error: "Enter an amount above zero." };
   if (!isCashMode(mode)) return { error: "Choose cash or online." };
+  if (remindOn && !isDay(remindOn)) return { error: "Choose a reminder date." };
 
   let done = "Recorded.";
   try {
@@ -44,18 +47,18 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
       }
 
       if (kind === "loan") {
-        const [account] = await tx.insert(loan).values({ borrower: party })
-          .onConflictDoUpdate({ target: loan.borrower, set: { updatedAt: new Date() } }).returning();
+        const [account] = await tx.insert(loan).values({ borrower: party, remindOn: remindOn || null })
+          .onConflictDoUpdate({ target: loan.borrower, set: { updatedAt: new Date(), ...(remindOn ? { remindOn } : {}) } }).returning();
         [{ balance }] = await tx.select({ balance: signed(loanEntry.amt, loanEntry.type) }).from(loanEntry).where(eq(loanEntry.loan, account.id));
         if (repayment && amt > balance) throw new UserError("That is more than what this person owes the shop.");
-        const [entry] = await tx.insert(loanEntry).values({ loan: account.id, date, type: repayment ? "repayment" : "given", amt, mode }).returning();
+        const [entry] = await tx.insert(loanEntry).values({ loan: account.id, date, type: repayment ? "repayment" : "given", amt, mode, note }).returning();
         entryId = entry.id;
       } else {
-        const [account] = await tx.insert(lend).values({ lender: party })
-          .onConflictDoUpdate({ target: lend.lender, set: { updatedAt: new Date() } }).returning();
+        const [account] = await tx.insert(lend).values({ lender: party, remindOn: remindOn || null })
+          .onConflictDoUpdate({ target: lend.lender, set: { updatedAt: new Date(), ...(remindOn ? { remindOn } : {}) } }).returning();
         [{ balance }] = await tx.select({ balance: signed(lendEntry.amt, lendEntry.type) }).from(lendEntry).where(eq(lendEntry.lend, account.id));
         if (repayment && amt > balance) throw new UserError("That is more than what the shop owes this person.");
-        const [entry] = await tx.insert(lendEntry).values({ lend: account.id, date, type: repayment ? "repayment" : "taken", amt, mode }).returning();
+        const [entry] = await tx.insert(lendEntry).values({ lend: account.id, date, type: repayment ? "repayment" : "taken", amt, mode, note }).returning();
         entryId = entry.id;
       }
 
@@ -68,7 +71,7 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
           ? (repayment ? "Loan repayment received" : "Loan given")
           : (repayment ? "Borrowing repaid" : "Money borrowed"),
       });
-      await logAudit(tx, user.id, { tableName: table, recordId: entryId, action: "insert", newValues: { kind, party, repayment, amt, mode } });
+      await logAudit(tx, user.id, { tableName: table, recordId: entryId, action: "insert", newValues: { kind, party, repayment, amt, mode, note, remindOn: remindOn || undefined } });
     });
   } catch (error) {
     return fail(error, "Could not record the entry.");
@@ -82,5 +85,39 @@ export async function addLoanEntry(kind: "loan" | "lend", _prev: FormState, form
   revalidatePath("/ledgers");
   revalidatePath("/daybook");
   revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
   return { success: done };
+}
+
+const isDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
+
+// Sets, moves or clears the day to chase an account. From that day, while anything is still open on
+// it, the account is flagged in the sidebar, on the dashboard and on the Loans page.
+export async function setLoanReminder(kind: "given" | "taken", id: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  const clear = formData.get("clear") === "on";
+  const remindOn = clear ? null : text(formData, "remindOn");
+  if (!isUuid(id) || (kind !== "given" && kind !== "taken")) return { error: "Account not found." };
+  if (remindOn !== null && !isDay(remindOn)) return { error: "Choose a reminder date, or tick to clear it." };
+
+  try {
+    await db.transaction(async (tx) => {
+      const table = kind === "given" ? loan : lend;
+      const [before] = await tx.select({ remindOn: table.remindOn }).from(table).where(eq(table.id, id)).for("update");
+      if (!before) throw new UserError("Account not found.");
+      await tx.update(table).set({ remindOn, updatedAt: new Date() }).where(eq(table.id, id));
+      await logAudit(tx, user.id, {
+        tableName: kind === "given" ? "loan" : "lend", recordId: id, action: "update",
+        oldValues: { remindOn: before.remindOn }, newValues: { remindOn },
+      });
+    });
+  } catch (error) {
+    return fail(error, "Could not save the reminder.");
+  }
+
+  revalidatePath("/loans");
+  revalidatePath("/loans/[kind]/[id]", "page");
+  revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
+  return { success: remindOn ? `Reminder set for ${dateOnly(remindOn)}.` : "Reminder cleared." };
 }

@@ -6,6 +6,7 @@ import { entity } from "@/db/schema/entities";
 import { goldLoan, goldLoanPayment, oldItem } from "@/db/schema/sales";
 import { addGoldLoanPayment, clearGoldLoan, defaultGoldLoan, giveMoreOnGoldLoan } from "@/app/actions/goldloans";
 import { ActionForm } from "@/components/ActionForm";
+import { ActionPanels } from "@/components/ActionPanels";
 import { Card, DateField, Field, linkClass, ModeField, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
@@ -75,73 +76,80 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
         <p className="text-sm text-fg-2">The pledge was taken over as <Link href={`/old-gold/${takenOver.id}`} className={linkClass}>old metal</Link>.</p>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card title="Payments">
-          {payments.length === 0 ? <p className="text-sm text-fg-3">No payments yet.</p> : (
-            <ul className="divide-y divide-line text-sm">
-              {payments.map((payment) => (
-                <li key={payment.id} className="flex justify-between py-2">
-                  <span className="text-fg-2">{dateTime(payment.date)} · {typeLabel(payment.type)}{payment.mode ? ` · ${payment.mode}` : ""}</span>
-                  <span className="text-fg">{inr(payment.amt)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+      {active && (
+        <ActionPanels panels={[
+          {
+            key: "payment", label: "Receive payment", title: "Receive part payment",
+            hint: "Interest, or part of the principal. Principal repaid lowers interest from the next month.",
+            children: (
+              <ActionForm action={addGoldLoanPayment.bind(null, id)} submitLabel="Record payment">
+                <SelectField label="Towards" name="type" options={[
+                  { value: "interest", label: "Interest" },
+                  { value: "principal", label: "Principal" },
+                  ...(penaltyDue > 0 ? [{ value: "penalty", label: "Penalty" }] : []),
+                ]} />
+                <Rupees label="Amount (₹)" name="amt" required />
+                <ModeField label="Received in" />
+                <DateField />
+              </ActionForm>
+            ),
+          },
+          {
+            key: "more", label: "Give more money", title: "Give more money",
+            hint: "Added to this loan. Interest is charged on it for the whole month of the loan it is taken in.",
+            children: (
+              <ActionForm action={giveMoreOnGoldLoan.bind(null, id)} submitLabel="Give more">
+                <Rupees label="Amount (₹)" name="amt" required />
+                <ModeField label="Paid from" />
+                <DateField />
+              </ActionForm>
+            ),
+          },
+          {
+            key: "clear", label: "Clear girvi", title: "Clear girvi",
+            hint: `Takes the ${inr(principalDue)} of principal due and the interest and penalty the customer pays. Interest not taken is written as a discount. The penalty can be lowered or raised; the change is recorded. This closes the loan; return the pledge.`,
+            children: (
+              <ActionForm action={clearGoldLoan.bind(null, id)} submitLabel="Clear and return pledge">
+                <p className="text-sm text-fg-2">
+                  Due today: {inr(principalDue)} principal + {inr(interestDue)} interest{penaltyDue > 0 && <> + {inr(penaltyDue)} penalty</>} = <span className="font-medium text-fg">{inr(totalDue)}</span>
+                </p>
+                <Rupees label="Interest taken (₹)" name="interest" min="0" max={String(interestDue)} defaultValue={String(interestDue)} required />
+                <Rupees
+                  label="Penalty taken (₹)" name="penalty" min="0" defaultValue={String(penaltyDue)} required
+                  hint={`${inr(penaltyDue)} by the rule. Lower it to let some go, or raise it to charge more.`}
+                />
+                <Field label="Reason (optional)" name="desc" type="text" placeholder="e.g. penalty reduced on request" />
+                <ModeField label="Received in" />
+                <DateField />
+              </ActionForm>
+            ),
+          },
+          {
+            key: "default", label: "Customer defaulted", title: "Customer defaulted", danger: true,
+            hint: `The pledge becomes the shop's old metal at ${inr(totalDue)} (principal plus unpaid interest${penaltyDue > 0 ? " and penalty" : ""}). This cannot be undone.`,
+            children: (
+              <ActionForm action={defaultGoldLoan.bind(null, id)} submitLabel="Take over pledge" tone="danger">
+                <SelectField label="Metal" name="metal" options={["Gold", "Silver", "Phuli"]} />
+                <Percent label="Melting (%)" name="melting" min="0.001" required />
+                <DateField />
+              </ActionForm>
+            ),
+          },
+        ]} />
+      )}
 
-        {active && (
-          <Card title="Clear girvi" hint={`Takes the ${inr(principalDue)} of principal due and the interest and penalty the customer pays. Interest not taken is written as a discount. The penalty can be lowered or raised; the change is recorded. This closes the loan; return the pledge.`}>
-            <ActionForm action={clearGoldLoan.bind(null, id)} submitLabel="Clear and return pledge">
-              <p className="text-sm text-fg-2">
-                Due today: {inr(principalDue)} principal + {inr(interestDue)} interest{penaltyDue > 0 && <> + {inr(penaltyDue)} penalty</>} = <span className="font-medium text-fg">{inr(totalDue)}</span>
-              </p>
-              <Rupees label="Interest taken (₹)" name="interest" min="0" max={String(interestDue)} defaultValue={String(interestDue)} required />
-              <Rupees
-                label="Penalty taken (₹)" name="penalty" min="0" defaultValue={String(penaltyDue)} required
-                hint={`${inr(penaltyDue)} by the rule. Lower it to let some go, or raise it to charge more.`}
-              />
-              <Field label="Reason (optional)" name="desc" type="text" placeholder="e.g. penalty reduced on request" />
-              <ModeField label="Received in" />
-              <DateField />
-            </ActionForm>
-          </Card>
+      <Card title="Payments" className="max-w-2xl">
+        {payments.length === 0 ? <p className="text-sm text-fg-3">No payments yet.</p> : (
+          <ul className="divide-y divide-line text-sm">
+            {payments.map((payment) => (
+              <li key={payment.id} className="flex justify-between py-2">
+                <span className="text-fg-2">{dateTime(payment.date)} · {typeLabel(payment.type)}{payment.mode ? ` · ${payment.mode}` : ""}</span>
+                <span className="text-fg">{inr(payment.amt)}</span>
+              </li>
+            ))}
+          </ul>
         )}
-
-        {active && (
-          <Card title="Receive part payment" hint="Interest, or part of the principal. Principal repaid lowers interest from the next month.">
-            <ActionForm action={addGoldLoanPayment.bind(null, id)} submitLabel="Record payment">
-              <SelectField label="Towards" name="type" options={[
-                { value: "interest", label: "Interest" },
-                { value: "principal", label: "Principal" },
-                ...(penaltyDue > 0 ? [{ value: "penalty", label: "Penalty" }] : []),
-              ]} />
-              <Rupees label="Amount (₹)" name="amt" required />
-              <ModeField label="Received in" />
-              <DateField />
-            </ActionForm>
-          </Card>
-        )}
-
-        {active && (
-          <Card title="Give more money" hint="Added to this loan. Interest is charged on it for the whole month of the loan it is taken in.">
-            <ActionForm action={giveMoreOnGoldLoan.bind(null, id)} submitLabel="Give more">
-              <Rupees label="Amount (₹)" name="amt" required />
-              <ModeField label="Paid from" />
-              <DateField />
-            </ActionForm>
-          </Card>
-        )}
-
-        {active && (
-          <Card title="Customer defaulted" hint={`The pledge becomes the shop's old metal at ${inr(totalDue)} (principal plus unpaid interest${penaltyDue > 0 ? " and penalty" : ""}). This cannot be undone.`}>
-            <ActionForm action={defaultGoldLoan.bind(null, id)} submitLabel="Take over pledge">
-              <SelectField label="Metal" name="metal" options={["Gold", "Silver", "Phuli"]} />
-              <Percent label="Melting (%)" name="melting" min="0.001" required />
-              <DateField />
-            </ActionForm>
-          </Card>
-        )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -22,6 +22,7 @@ export type Due = {
   amt: number; // the whole of it
   due: number; // what is still unpaid
   href: string;
+  remindOn?: string | null; // a plain account's reminder day, if one is set
 };
 
 // What is left of a running account: everything given or taken, less the repayments.
@@ -38,7 +39,7 @@ const outstanding = (groups: Due[][], plain: Due[]) => [...plain.sort(newestFirs
 export async function getDues() {
   const [loans, sales, repairs, goldLoans, returns, lends, bills, oldItems, misc] = await Promise.all([
     db
-      .select({ id: loan.id, party: entity.name, date: sql<string | null>`max(${loanEntry.date})`, amt: advancedOf(loanEntry.amt, loanEntry.type), due: balanceOf(loanEntry.amt, loanEntry.type) })
+      .select({ id: loan.id, party: entity.name, remindOn: loan.remindOn, date: sql<string | null>`max(${loanEntry.date})`, amt: advancedOf(loanEntry.amt, loanEntry.type), due: balanceOf(loanEntry.amt, loanEntry.type) })
       .from(loan)
       .innerJoin(entity, eq(loan.borrower, entity.id))
       .leftJoin(loanEntry, eq(loanEntry.loan, loan.id))
@@ -67,7 +68,7 @@ export async function getDues() {
       .leftJoin(supplierReturnSettlement, eq(supplierReturnSettlement.supplierReturn, supplierReturn.id))
       .groupBy(supplierReturn.id, entity.name),
     db
-      .select({ id: lend.id, party: entity.name, date: sql<string | null>`max(${lendEntry.date})`, amt: advancedOf(lendEntry.amt, lendEntry.type), due: balanceOf(lendEntry.amt, lendEntry.type) })
+      .select({ id: lend.id, party: entity.name, remindOn: lend.remindOn, date: sql<string | null>`max(${lendEntry.date})`, amt: advancedOf(lendEntry.amt, lendEntry.type), due: balanceOf(lendEntry.amt, lendEntry.type) })
       .from(lend)
       .innerJoin(entity, eq(lend.lender, entity.id))
       .leftJoin(lendEntry, eq(lendEntry.lend, lend.id))
@@ -103,7 +104,7 @@ export async function getDues() {
       })),
       returns.map((row) => ({ id: row.id, kind: "Supplier return", party: row.party, date: row.date, detail: "Piece sent back", amt: row.amt ?? 0, due: unpaid(row.amt, row.paid), href: `/inventory/${row.piece}` })),
     ],
-    loans.map((row) => ({ id: row.id, kind: "Loan", party: row.party, date: row.date, detail: null, amt: row.amt, due: round2(row.due), href: `/loans/given/${row.id}` })),
+    loans.map((row) => ({ id: row.id, kind: "Loan", party: row.party, date: row.date, detail: null, amt: row.amt, due: round2(row.due), href: `/loans/given/${row.id}`, remindOn: row.remindOn })),
   );
 
   const owing = outstanding(
@@ -115,7 +116,7 @@ export async function getDues() {
       })),
       misc.map((row) => ({ id: row.id, kind: "Misc purchase", party: row.party, date: row.date, detail: words(row.qty, row.unit, row.item, payBy(row.dueDate)), amt: row.amt ?? 0, due: unpaid(row.amt, row.paid), href: "/misc" })),
     ],
-    lends.map((row) => ({ id: row.id, kind: "Borrowing", party: row.party, date: row.date, detail: null, amt: row.amt, due: round2(row.due), href: `/loans/taken/${row.id}` })),
+    lends.map((row) => ({ id: row.id, kind: "Borrowing", party: row.party, date: row.date, detail: null, amt: row.amt, due: round2(row.due), href: `/loans/taken/${row.id}`, remindOn: row.remindOn })),
   );
 
   return { owed, owing };

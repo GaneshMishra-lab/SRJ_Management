@@ -4,12 +4,12 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
-import { addLoanEntry } from "@/app/actions/loans";
+import { addLoanEntry, setLoanReminder } from "@/app/actions/loans";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DataTable, DateField, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
+import { Card, DataTable, DateField, Field, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
-import { dateTime, inr } from "@/lib/format";
+import { dateOnly, dateTime, inr, istDate } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
 
 // One person's running account of plain cash: `given` is what the shop lent them, `taken` what
@@ -30,8 +30,8 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
   const words = KINDS[kind];
 
   const [account] = kind === "given"
-    ? await db.select({ person: entity.id, name: entity.name, contact: entity.contact }).from(loan).innerJoin(entity, eq(loan.borrower, entity.id)).where(eq(loan.id, id))
-    : await db.select({ person: entity.id, name: entity.name, contact: entity.contact }).from(lend).innerJoin(entity, eq(lend.lender, entity.id)).where(eq(lend.id, id));
+    ? await db.select({ person: entity.id, name: entity.name, contact: entity.contact, remindOn: loan.remindOn }).from(loan).innerJoin(entity, eq(loan.borrower, entity.id)).where(eq(loan.id, id))
+    : await db.select({ person: entity.id, name: entity.name, contact: entity.contact, remindOn: lend.remindOn }).from(lend).innerJoin(entity, eq(lend.lender, entity.id)).where(eq(lend.id, id));
   if (!account) notFound();
 
   const entries = kind === "given"
@@ -46,6 +46,8 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
   const balance = lines.at(-1)?.balance ?? 0;
   const repaid = round2(lines.filter((line) => line.repayment).reduce((sum, line) => sum + (line.entry.amt ?? 0), 0));
   const advanced = round2(balance + repaid);
+  const today = istDate();
+  const reminderDue = Boolean(account.remindOn && account.remindOn <= today && balance > 0);
 
   return (
     <div className="space-y-6">
@@ -61,6 +63,15 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
         { name: words.left, value: inr(balance) },
       ]} />
 
+      {reminderDue && (
+        <div role="alert" className="flex items-center gap-3 rounded-xl border border-bad/40 bg-bad/8 px-4 py-3">
+          <span className="grid h-7 w-7 shrink-0 animate-pulse place-items-center rounded-full bg-bad text-sm font-bold text-white" aria-hidden="true">!</span>
+          <p className="text-sm text-fg">
+            Reminder {account.remindOn === today ? "today" : `since ${dateOnly(account.remindOn)}`}: {inr(balance)} {kind === "given" ? "still to come from" : "still to pay to"} {account.name ?? "this person"}.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <DataTable
@@ -71,7 +82,7 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
               <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
               "sale" in entry && entry.sale && ON_A_BILL[entry.mode ?? ""]
                 ? <Link key="e" href={`/sales/${entry.sale}`} className={linkClass}>{ON_A_BILL[entry.mode ?? ""]}</Link>
-                : <span key="e" className="capitalize">{INTO_BC[entry.mode ?? ""] ?? entry.type}</span>,
+                : <span key="e"><span className="capitalize">{INTO_BC[entry.mode ?? ""] ?? entry.type}</span>{"note" in entry && entry.note ? <span className="block text-[13px] text-fg-3">{entry.note}</span> : null}</span>,
               <span key="m" className="capitalize">{ON_A_BILL[entry.mode ?? ""] || INTO_BC[entry.mode ?? ""] ? "No cash" : entry.mode}</span>,
               <span key="a" className={repayment ? "text-ok" : "text-fg"}>{repayment ? "−" : "+"} {inr(entry.amt)}</span>,
               inr(after),
@@ -85,7 +96,19 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
             <SelectField label="Entry" name="type" defaultValue={balance > 0 ? "repayment" : words.first.value} options={[words.first, { value: "repayment", label: words.repay }]} />
             <Rupees label="Amount (₹)" name="amt" required />
             <ModeField label="Cash or online" />
+            <Field label="Note (optional)" name="note" type="text" />
             <DateField />
+          </ActionForm>
+        </Card>
+
+        <Card title="Reminder" hint={account.remindOn ? `Set for ${dateOnly(account.remindOn)}.${balance > 0 ? "" : " Nothing is open, so it is not shown."}` : "From this day the account is flagged with a red ! in the sidebar, on the dashboard and on the Loans page, until it is settled."}>
+          <ActionForm action={setLoanReminder.bind(null, kind, id)} submitLabel="Save reminder">
+            <Field label="Remind on" name="remindOn" type="date" defaultValue={account.remindOn ?? ""} />
+            {account.remindOn && (
+              <label className="flex items-center gap-2 text-sm text-fg-2">
+                <input type="checkbox" name="clear" className="h-4 w-4 accent-accent" /> Clear the reminder
+              </label>
+            )}
           </ActionForm>
         </Card>
       </div>

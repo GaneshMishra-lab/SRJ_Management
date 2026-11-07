@@ -92,6 +92,13 @@
       "when": 1794033695136,
       "tag": "0012_lend_note",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794037263822,
+      "tag": "0013_loan_note_reminder",
+      "breakpoints": true
     }
   ]
 }

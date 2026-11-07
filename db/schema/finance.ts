@@ -9,6 +9,9 @@ export const loan = pgTable("loan", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   borrower: uuid("borrower").notNull().unique().references(() => entity.id),
+  // A day to chase this account. From that day, while anything is still owed, it is flagged in
+  // the sidebar, on the dashboard and on the Loans page.
+  remindOn: date("remind_on", { mode: "string" }),
 });
 
 export const loanEntry = pgTable("loan_entry", {
@@ -19,6 +22,7 @@ export const loanEntry = pgTable("loan_entry", {
   type: text("type"), // given, repayment
   amt: rupees("amt"),
   mode: text("mode"),
+  note: text("note"), // what the money was for, e.g. "Ram wedding" or "tops 1.31 g"
 });
 
 // lend: cash the shop took. One running account per entity. A customer's deposit (money left
@@ -27,6 +31,7 @@ export const lend = pgTable("lend", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
   lender: uuid("lender").notNull().unique().references(() => entity.id),
+  remindOn: date("remind_on", { mode: "string" }), // as on loan: a day to settle this account
 });
 
 export const lendEntry = pgTable("lend_entry", {
