@@ -212,7 +212,11 @@ const lookups: Record<string, (ids: string[], day: string) => Promise<Found>> = 
       .leftJoin(goldLoan, eq(goldLoanPayment.loan, goldLoan.id))
       .leftJoin(entity, eq(goldLoan.customer, entity.id))
       .where(inArray(goldLoanPayment.id, ids));
-    return found(rows, (row) => ({ kind: "girvi_received", party: row.party, tag: row.type === "principal" ? "principal" : "interest", href: `/gold-loans/${row.loan}` }));
+    // More given on a pledge goes out under the girvi given; the rest comes in under girvi received.
+    const tags = { principal: "principal", interest: "interest", topup: "topup", penalty: "penalty" } as const;
+    return found(rows, (row) => ({
+      kind: { in: "girvi_received", out: "girvi_given" }, party: row.party, tag: tags[row.type as keyof typeof tags] ?? "interest", href: `/gold-loans/${row.loan}`,
+    }));
   },
   bc_payment: async (ids) => {
     const rows = await db
@@ -467,6 +471,23 @@ export async function getDay(day: string, heads: Head[]) {
       for (const old of sale.old) write(`${old.id}:back`, `old.${metalOf(old.metal)}`, "in", old.amt ?? 0, { weight: old.weight, tag: "refund", href: `/old-gold/${old.id}` });
       write("due:cancelled", "sale_due", "in", round2(unsettled - sum(money)), { tag: "cancelled" });
     }
+  }
+
+  // BC instalments paid out of a customer's deposit. No cash moves, so the cash ledger has no row:
+  // the money is written into the BC head and taken off the सावकारी head it was first written under.
+  const fromDeposit = await db
+    .select({ id: bcPayment.id, bc: bcPayment.bc, amt: bcPayment.amt, party: entity.name, cardNo: bc.cardNo })
+    .from(bcPayment)
+    .innerJoin(bc, eq(bcPayment.bc, bc.id))
+    .leftJoin(entity, eq(bc.customer, entity.id))
+    .where(and(eq(bcPayment.mode, "lend"), gte(bcPayment.date, start), lt(bcPayment.date, end)))
+    .orderBy(asc(bcPayment.date));
+  for (const row of fromDeposit) {
+    const amt = row.amt ?? 0;
+    if (amt <= 0) continue;
+    const line = { day, bank: false, amt, party: row.party, weight: null, purity: null, rate: null, mode: "cash" as const, extra: {}, editable: false, source: null, href: `/bc/${row.bc}` };
+    entries.push({ ...line, id: `${row.id}:bc`, headId: place(rules.get("bc_instalment"), "in"), flow: "in", note: row.cardNo ? `#${row.cardNo}` : null, tag: "fromDeposit" });
+    entries.push({ ...line, id: `${row.id}:lend`, headId: place(rules.get("borrow_taken"), "out"), flow: "out", note: null, tag: "toBc" });
   }
 
   const allHeads = [...heads, ...extra.values()];

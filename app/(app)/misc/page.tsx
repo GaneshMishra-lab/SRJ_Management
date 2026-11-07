@@ -8,7 +8,7 @@ import { CreditFields } from "@/components/CreditFields";
 import { Card, DataTable, DateField, EntityFields, Field, ModeField, PageHeader, Rupees, SelectField, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { dueStatus } from "@/lib/due";
-import { listEntities } from "@/lib/entities";
+import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 import { dateOnly, dateTime, inr } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
 
@@ -16,7 +16,7 @@ export default async function MiscPage() {
   await getCurrentUser();
 
   const categories = await db.select().from(miscCategory).orderBy(asc(miscCategory.name));
-  const people = await listEntities(["customer", "supplier"]);
+  const people = await listEntities([...CUSTOMER_TYPES, "supplier"]);
 
   // Quantity in hand is what was bought minus what was sold.
   const items = await db

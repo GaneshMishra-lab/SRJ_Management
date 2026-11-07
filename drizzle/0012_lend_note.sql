@@ -1,0 +1,1 @@
+ALTER TABLE "lend_entry" ADD COLUMN "note" text;

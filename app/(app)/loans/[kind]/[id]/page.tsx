@@ -21,6 +21,7 @@ const KINDS = {
 
 // Lines that moved no cash: money held, spent on a sale bill, and given back when that bill was cancelled.
 const ON_A_BILL: Record<string, string> = { sale: "Used on a sale bill", sale_cancel: "Sale bill cancelled, held again" };
+const INTO_BC: Record<string, string> = { bc: "Paid into a BC" };
 
 export default async function LoanAccountPage({ params }: { params: Promise<{ kind: string; id: string }> }) {
   await getCurrentUser();
@@ -70,8 +71,8 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
               <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
               "sale" in entry && entry.sale && ON_A_BILL[entry.mode ?? ""]
                 ? <Link key="e" href={`/sales/${entry.sale}`} className={linkClass}>{ON_A_BILL[entry.mode ?? ""]}</Link>
-                : <span key="e" className="capitalize">{entry.type}</span>,
-              <span key="m" className="capitalize">{ON_A_BILL[entry.mode ?? ""] ? "No cash" : entry.mode}</span>,
+                : <span key="e" className="capitalize">{INTO_BC[entry.mode ?? ""] ?? entry.type}</span>,
+              <span key="m" className="capitalize">{ON_A_BILL[entry.mode ?? ""] || INTO_BC[entry.mode ?? ""] ? "No cash" : entry.mode}</span>,
               <span key="a" className={repayment ? "text-ok" : "text-fg"}>{repayment ? "−" : "+"} {inr(entry.amt)}</span>,
               inr(after),
             ])}

@@ -2,12 +2,12 @@ import { createRepair } from "@/app/actions/repairs";
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DateField, EntityFields, Field, Grams, PageHeader, Rupees } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
+import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 
 export default async function NewRepairPage() {
   await getCurrentUser();
 
-  const customers = await listEntities(["customer"]);
+  const customers = await listEntities(CUSTOMER_TYPES);
 
   return (
     <div className="space-y-6">

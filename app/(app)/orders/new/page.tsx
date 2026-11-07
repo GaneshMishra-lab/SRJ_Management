@@ -2,14 +2,14 @@ import { createOrder } from "@/app/actions/orders";
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DateField, EntityFields, Field, Grams, ModeField, PageHeader, Percent, Rupees, SelectField } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
+import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 import { inr } from "@/lib/format";
 import { getCurrentRates } from "@/lib/ledger";
 
 export default async function NewOrderPage() {
   await getCurrentUser();
 
-  const customers = await listEntities(["customer"]);
+  const customers = await listEntities(CUSTOMER_TYPES);
   const rates = await getCurrentRates();
 
   return (

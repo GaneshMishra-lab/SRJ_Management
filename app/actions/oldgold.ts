@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { itemStock, langdiLedger, oldItem, oldItemPayment } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
-import { nextLabel, resolveEntity, Tx } from "@/lib/entities";
+import { huidOf, nextLabel, resolveEntity, Tx } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { round2, round3 } from "@/lib/pricing";
@@ -144,7 +144,6 @@ export async function refurbishOldItem(id: string, _prev: FormState, formData: F
   const grossWeight = round3(num(formData, "grossWeight"));
   const netWeight = round3(num(formData, "netWeight")) || grossWeight;
   const melting = round3(num(formData, "melting"));
-  const huid = text(formData, "huid");
 
   if (!isUuid(id)) return { error: "Old item not found." };
   if (!isUuid(itemTypeId)) return { error: "Choose an item type." };
@@ -155,11 +154,12 @@ export async function refurbishOldItem(id: string, _prev: FormState, formData: F
     const date = entryDate(formData);
     await db.transaction(async (tx) => {
       await leaveVault(tx, id, "refurbished", date);
+      const huid = await huidOf(tx, formData);
       const { label, metal } = await nextLabel(tx, itemTypeId);
       const [piece] = await tx.insert(itemStock).values({
         date,
         itemType: itemTypeId, metal, grossWeight, netWeight, melting,
-        huid: huid || null, label, status: "stock", oldItemSource: id,
+        huid, label, status: "stock", oldItemSource: id,
       }).returning();
       await logAudit(tx, user.id, { tableName: "item_stock", recordId: piece.id, action: "insert", newValues: piece });
     });

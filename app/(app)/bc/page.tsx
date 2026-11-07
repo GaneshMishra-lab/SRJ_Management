@@ -7,7 +7,7 @@ import { ActionForm } from "@/components/ActionForm";
 import { Card, DataTable, DateField, EntityFields, Field, linkClass, ModeField, PageHeader, Rupees, Stats, StatusBadge } from "@/components/ui";
 import { listBcs, type BcListed } from "@/lib/bc";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
+import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 import { dateOnly, inr, istDate, istDayRange } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
 
@@ -24,7 +24,7 @@ export default async function BcPage() {
   const { start: monthStart } = istDayRange(`${today.slice(0, 8)}01`);
   const [bcs, people, [{ collected }]] = await Promise.all([
     listBcs(),
-    listEntities(["customer"]),
+    listEntities(CUSTOMER_TYPES),
     db.select({ collected: sql<number>`coalesce(sum(${bcPayment.amt}), 0)`.mapWith(Number) })
       .from(bcPayment)
       .where(and(gte(bcPayment.date, monthStart), inArray(bcPayment.mode, ["cash", "online"]))),

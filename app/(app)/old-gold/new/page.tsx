@@ -2,12 +2,12 @@ import { buyOldItem } from "@/app/actions/oldgold";
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DateField, EntityFields, Grams, ModeField, PageHeader, Percent, Rupees, SelectField } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
-import { listEntities } from "@/lib/entities";
+import { CUSTOMER_TYPES, listEntities } from "@/lib/entities";
 
 export default async function BuyOldMetalPage() {
   await getCurrentUser();
 
-  const customers = await listEntities(["customer"]);
+  const customers = await listEntities(CUSTOMER_TYPES);
 
   return (
     <div className="space-y-6">

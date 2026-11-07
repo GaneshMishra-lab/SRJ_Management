@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:which": "node db-use.js",
+    "db:test": "node db-use.js test",
+    "db:prod": "node db-use.js prod"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

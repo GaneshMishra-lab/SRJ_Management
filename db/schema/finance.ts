@@ -41,6 +41,7 @@ export const lendEntry = pgTable("lend_entry", {
   // and the money is held again, taken).
   mode: text("mode"),
   sale: uuid("sale").references(() => itemSaleBill.id), // the bill, for modes sale and sale_cancel
+  note: text("note"), // what the money is for, e.g. "to be used with BC no. 14"
 });
 
 // BC: a customer pays the same instalment every month for a term. Once the term has run, the shop

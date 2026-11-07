@@ -19,7 +19,7 @@ import {
   supplierReturnSettlement,
 } from "@/db/schema/sales";
 import { getCurrentUser, logAudit } from "@/lib/dal";
-import { nextLabel } from "@/lib/entities";
+import { huidOf, nextLabel } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
 import { looseBalances, looseOfPurchase, recordLoose } from "@/lib/loose";
@@ -51,7 +51,6 @@ export async function addPurchasedToStock(itemId: string, _prev: FormState, form
   const grossWeight = round3(num(formData, "grossWeight"));
   const netWeight = round3(num(formData, "netWeight")) || grossWeight;
   const melting = round3(num(formData, "melting"));
-  const huid = text(formData, "huid");
 
   if (!isUuid(itemId)) return { error: "Purchased item not found." };
   if (!isUuid(itemTypeId)) return { error: "Choose an item type." };
@@ -72,10 +71,7 @@ export async function addPurchasedToStock(itemId: string, _prev: FormState, form
       const [existing] = await tx.select({ id: itemStock.id }).from(itemStock).where(eq(itemStock.item, itemId));
       const [inLoose] = await tx.select({ id: looseStockLedger.id }).from(looseStockLedger).where(looseOfPurchase(itemId));
       if (existing || inLoose) throw new UserError("This item is already in stock.");
-      if (huid) {
-        const [taken] = await tx.select({ id: itemStock.id }).from(itemStock).where(eq(itemStock.huid, huid));
-        if (taken) throw new UserError("Another piece already has this HUID.");
-      }
+      const huid = await huidOf(tx, formData);
 
       const [purchase] = await tx.select({ metal: bill.metal }).from(bill).where(eq(bill.id, purchased.bill));
       const { label, metal } = await nextLabel(tx, itemTypeId);
@@ -84,7 +80,7 @@ export async function addPurchasedToStock(itemId: string, _prev: FormState, form
       const [piece] = await tx.insert(itemStock).values({
         date,
         itemType: itemTypeId, metal, grossWeight, netWeight, melting,
-        huid: huid || null, label, status: "stock", item: itemId,
+        huid, label, status: "stock", item: itemId,
       }).returning();
       await logAudit(tx, user.id, { tableName: "item_stock", recordId: piece.id, action: "insert", newValues: piece });
     });
@@ -195,6 +191,34 @@ export async function checkLooseStock(itemTypeId: string, _prev: FormState, form
   revalidatePath("/dashboard");
   if (difference === 0) return { success: "The book already matches the scale." };
   return { success: `Stock corrected by ${difference > 0 ? "+" : "−"}${Math.abs(difference)} g.` };
+}
+
+// The HUID can be put on, corrected or taken off at any point in a piece's life, sold or melted
+// included: hallmarking often comes back after the piece was labelled.
+export async function setHuid(stockId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  if (!isUuid(stockId)) return { error: "Piece not found." };
+
+  let done = "HUID saved.";
+  try {
+    await db.transaction(async (tx) => {
+      const [piece] = await tx.select({ huid: itemStock.huid }).from(itemStock).where(eq(itemStock.id, stockId)).for("update");
+      if (!piece) throw new UserError("Piece not found.");
+      const huid = await huidOf(tx, formData, stockId);
+      if (huid === piece.huid) {
+        done = "No change.";
+        return;
+      }
+      if (!huid) done = "HUID removed.";
+      await tx.update(itemStock).set({ huid, updatedAt: new Date() }).where(eq(itemStock.id, stockId));
+      await logAudit(tx, user.id, { tableName: "item_stock", recordId: stockId, action: "update", oldValues: { huid: piece.huid }, newValues: { huid } });
+    });
+  } catch (error) {
+    return fail(error, "Could not save the HUID.");
+  }
+
+  revalidateStock(stockId);
+  return { success: done };
 }
 
 export async function sendOnApproval(stockId: string, _prev: FormState, formData: FormData): Promise<FormState> {

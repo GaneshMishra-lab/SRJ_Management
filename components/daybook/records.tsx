@@ -62,13 +62,13 @@ const FORMS = {
   // Cash put into the bank, or taken out of it; which way is set by the side of the bank's head.
   transfer: { fields: [rupees("amt", "amount")], run: (data) => transferCash(undefined, data) },
   girviGiven: {
-    fields: [party("customer", "customer"), text("item", "pledged", true), text("desc", "pledgeNotes"), grams("weight", "totalWeight"), rupees("amt", "loanAmount"), percent("interest", "interest"), mode],
+    fields: [party("customer", "customer", "staff"), text("item", "pledged", true), text("desc", "pledgeNotes"), grams("weight", "totalWeight"), rupees("amt", "loanAmount"), percent("interest", "interest"), mode],
     run: (data) => createGoldLoan(undefined, data),
   },
   girviReceived: {
     fields: [
       pick("loan", "loan", "loans"),
-      { kind: "select", name: "type", label: "towards", options: [{ value: "interest", label: "forInterest" }, { value: "principal", label: "forPrincipal" }] },
+      { kind: "select", name: "type", label: "towards", options: [{ value: "interest", label: "forInterest" }, { value: "principal", label: "forPrincipal" }, { value: "penalty", label: "forPenalty" }] },
       rupees("amt", "amount"),
       mode,
     ],
@@ -77,10 +77,10 @@ const FORMS = {
   loan: { fields: [anyone, rupees("amt", "amount"), mode], run: (data) => addLoanEntry("loan", undefined, data) },
   borrow: { fields: [anyone, rupees("amt", "amount"), mode], run: (data) => addLoanEntry("lend", undefined, data) },
   oldGold: {
-    fields: [party("customer", "customer"), { kind: "select", name: "metal", label: "metal", options: [{ value: "Gold", label: "gold" }, { value: "Phuli", label: "phuli" }] }, ...oldMetal],
+    fields: [party("customer", "customer", "staff"), { kind: "select", name: "metal", label: "metal", options: [{ value: "Gold", label: "gold" }, { value: "Phuli", label: "phuli" }] }, ...oldMetal],
     run: (data) => buyOldItem(undefined, data),
   },
-  oldSilver: { fields: [party("customer", "customer"), ...oldMetal], run: (data) => buyOldItem(undefined, data) },
+  oldSilver: { fields: [party("customer", "customer", "staff"), ...oldMetal], run: (data) => buyOldItem(undefined, data) },
   bullion: {
     fields: [
       party("dealer", "supplier"),
@@ -96,7 +96,7 @@ const FORMS = {
     run: (data) => sellLangdi(undefined, data),
   },
   misc: {
-    fields: [pick("item", "item", "items"), { kind: "number", name: "qty", label: "quantity", step: "1", required: true }, rupees("unitPrice", "unitPrice"), party("person", "customer", "supplier"), mode],
+    fields: [pick("item", "item", "items"), { kind: "number", name: "qty", label: "quantity", step: "1", required: true }, rupees("unitPrice", "unitPrice"), party("person", "customer", "staff", "supplier"), mode],
     run: (data) => addMiscTrade(undefined, data),
   },
   // Bought from a supplier, in full or on credit: what is paid now, and the days of credit on the rest.
@@ -117,7 +117,7 @@ const FORMS = {
   orderAdvance: { fields: [pick("order", "order", "orders"), rupees("amt", "advance"), mode], run: (data, values) => addOrderPayment(values.order, undefined, data) },
   newOrder: {
     fields: [
-      party("customer", "customer"),
+      party("customer", "customer", "staff"),
       text("name", "ordered", true),
       grams("weight", "approxWeight", false),
       percent("melting", "melting", false),

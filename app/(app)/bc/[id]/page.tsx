@@ -3,14 +3,15 @@ import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
-import { bc, bcPayment } from "@/db/schema/finance";
+import { bc, bcPayment, lend, lendEntry } from "@/db/schema/finance";
 import { itemSaleBill, itemSaleDetails } from "@/db/schema/sales";
 import { addBcPayment, deleteBcPayment, matureBc, undoBcMaturity } from "@/app/actions/bc";
 import { ActionForm } from "@/components/ActionForm";
 import { RemoveButton } from "@/components/controls";
-import { Card, DataTable, DateField, Notice, ModeField, PageHeader, Rupees, Stats, StatusBadge } from "@/components/ui";
+import { Card, DataTable, DateField, Notice, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { bcFigures, dueOn, type BcStatus } from "@/lib/bc";
 import { getCurrentUser } from "@/lib/dal";
+import { balanceOf } from "@/lib/dues";
 import { isUuid } from "@/lib/form";
 import { dateOnly, dateTime, inr, istDate } from "@/lib/format";
 import { mayCorrect } from "@/lib/ledger";
@@ -37,14 +38,17 @@ export default async function BcAccountPage({ params }: { params: Promise<{ id: 
   if (!found) notFound();
   const row = found.bc;
 
-  const [payments, bills] = await Promise.all([
+  const [payments, bills, [deposit]] = await Promise.all([
     db.select().from(bcPayment).where(eq(bcPayment.bc, id)).orderBy(asc(bcPayment.date), asc(bcPayment.createdAt)),
     db.select({ id: itemSaleBill.id, date: itemSaleBill.date, total: itemSaleBill.totalAmt, cancelledAt: itemSaleBill.cancelledAt, amt: itemSaleDetails.amtPaid })
       .from(itemSaleDetails)
       .innerJoin(itemSaleBill, eq(itemSaleDetails.sale, itemSaleBill.id))
       .where(and(eq(itemSaleDetails.bc, id), eq(itemSaleDetails.mode, "bc")))
       .orderBy(asc(itemSaleBill.date)),
+    // Money the customer has left with the shop (their सावकारी account), which can pay instalments.
+    db.select({ held: balanceOf(lendEntry.amt, lendEntry.type) }).from(lendEntry).innerJoin(lend, eq(lendEntry.lend, lend.id)).where(eq(lend.lender, row.customer)),
   ]);
+  const held = round2(deposit?.held ?? 0);
 
   const paid = round2(payments.reduce((total, payment) => total + (payment.amt ?? 0), 0));
   const spent = round2(bills.filter((sale) => !sale.cancelledAt).reduce((total, sale) => total + (sale.amt ?? 0), 0));
@@ -114,7 +118,7 @@ export default async function BcAccountPage({ params }: { params: Promise<{ id: 
                 {payments.map((payment) => (
                   <li key={payment.id} className="flex items-center justify-between gap-4 border-t border-line px-5 py-3">
                     <div className="min-w-0">
-                      <p className="text-sm text-fg capitalize">{payment.mode === "opening" ? "Paid before the app" : payment.mode}</p>
+                      <p className="text-sm text-fg capitalize">{payment.mode === "opening" ? "Paid before the app" : payment.mode === "lend" ? "From deposit (no cash)" : payment.mode}</p>
                       <p className="text-[13px] text-fg-3">{dateTime(payment.date)}</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -153,7 +157,12 @@ export default async function BcAccountPage({ params }: { params: Promise<{ id: 
             <Card title="Record an instalment">
               <ActionForm action={addBcPayment.bind(null, id)} submitLabel="Record">
                 <Rupees label="Amount (₹)" name="amt" defaultValue={Math.min(row.instalment, f.left)} max={f.left} required />
-                <ModeField label="Cash or online" />
+                <SelectField label="Paid by" name="mode" options={[
+                  { value: "cash", label: "Cash (Vault)" },
+                  { value: "online", label: "Online (Bank)" },
+                  ...(held > 0 ? [{ value: "lend", label: `From deposit (${inr(held)} held)` }] : []),
+                ]} />
+                {held > 0 && <p className="text-[13px] text-fg-3">The shop holds {inr(held)} of this customer&apos;s money (सावकारी). Paying from it moves no cash.</p>}
                 <DateField />
               </ActionForm>
             </Card>

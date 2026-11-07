@@ -16,7 +16,7 @@ import {
   supplierReturn,
   supplierReturnSettlement,
 } from "@/db/schema/sales";
-import { creditSupplierReturn, meltItem, returnFromApproval, returnToSupplier, sendOnApproval, settleSupplierReturn, settleSupplierReturnFine } from "@/app/actions/stock";
+import { creditSupplierReturn, meltItem, returnFromApproval, returnToSupplier, sendOnApproval, setHuid, settleSupplierReturn, settleSupplierReturnFine } from "@/app/actions/stock";
 import { Card, DateField, Field, Grams, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { ActionForm } from "@/components/ActionForm";
 import { getCurrentUser } from "@/lib/dal";
@@ -95,7 +95,7 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
   const holders = await db
     .select({ id: entity.id, name: entity.name, type: entity.type })
     .from(entity)
-    .where(inArray(entity.type, ["customer", "supplier"]))
+    .where(inArray(entity.type, ["customer", "staff", "supplier"]))
     .orderBy(asc(entity.name));
 
   const s = piece.stock;
@@ -223,6 +223,13 @@ export default async function StockPiecePage({ params }: { params: Promise<{ id:
             </li>
           ))}
         </ol>
+      </Card>
+
+      {/* Whatever the piece's status: hallmarking often comes back after the piece was labelled, or even sold. */}
+      <Card title="HUID" hint="The 6-character hallmark code stamped on the piece. Leave empty and save to remove it." className="max-w-md">
+        <ActionForm key={s.huid ?? ""} action={setHuid.bind(null, id)} submitLabel={s.huid ? "Change HUID" : "Save HUID"} tone="secondary">
+          <Field label="HUID" name="huid" type="text" defaultValue={s.huid ?? ""} maxLength={6} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
+        </ActionForm>
       </Card>
 
       {s.status === "stock" && (

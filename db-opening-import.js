@@ -352,7 +352,10 @@ function build(data, existing) {
     if (!pledge) { problem(sheet, r.row, `book no. ${r.ref} is not on the Gold loans sheet`); continue; }
     if (r.date < pledge.day) problem(sheet, r.row, `the payment is dated before loan ${r.ref} was given`);
     if (r.type === 'principal') pledge.loan.amt_paid = round2(pledge.loan.amt_paid + r.amt);
-    add('gold_loan_payment', { loan: pledge.loan.id, date: noon(r.date), amt: round2(r.amt), type: r.type, mode: 'opening', desc: null });
+    // More given on the same pledge is added to the loan, as the app does.
+    if (r.type === 'more') pledge.loan.amt = round2(pledge.loan.amt + r.amt);
+    const type = r.type === 'more' ? 'topup' : r.type;
+    add('gold_loan_payment', { loan: pledge.loan.id, date: noon(r.date), amt: round2(r.amt), type, mode: 'opening', desc: null });
   }
   for (const { loan, row } of pledges.values()) {
     if (loan.amt_paid >= loan.amt) problem('Gold loans', row, 'the principal is already repaid in full; leave closed loans out');

@@ -85,6 +85,13 @@
       "when": 1793543971506,
       "tag": "0011_stock_check",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794033695136,
+      "tag": "0012_lend_note",
+      "breakpoints": true
     }
   ]
 }

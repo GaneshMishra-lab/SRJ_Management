@@ -5,6 +5,7 @@ import { entity } from "@/db/schema/entities";
 import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
 import { itemOrder, itemPurchased, itemRepairing, itemSaleBill, itemStock, itemType } from "@/db/schema/sales";
 import { listBcs } from "@/lib/bc";
+import { CUSTOMER_TYPES } from "@/lib/entities";
 import { balanceOf } from "@/lib/dues";
 import { getCurrentRates } from "@/lib/ledger";
 import { looseBalances } from "@/lib/loose";
@@ -15,9 +16,9 @@ import { round2 } from "@/lib/pricing";
 
 export async function saleFormData(day: string) {
   const customers = await db
-    .select({ id: entity.id, name: entity.name })
+    .select({ id: entity.id, name: entity.name, type: entity.type })
     .from(entity)
-    .where(eq(entity.type, "customer"))
+    .where(inArray(entity.type, CUSTOMER_TYPES))
     .orderBy(asc(entity.name));
 
   const pieces = await db

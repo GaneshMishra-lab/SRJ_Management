@@ -10,7 +10,7 @@ import { Card, Field, Notice, SelectField, SummaryRow } from "@/components/ui";
 import { PieceSearch } from "@/components/PieceSearch";
 import { btn, iconButtonClass, linkClass } from "@/lib/styles";
 
-type Customer = { id: string; name: string | null };
+type Customer = { id: string; name: string | null; type: string | null };
 type Piece = {
   id: string;
   label: number | null;
@@ -245,7 +245,7 @@ export function SaleForm({
             <SelectField label="Customer" className={orders.length === 0 && !isNewCustomer ? "sm:col-span-2" : ""} value={customerId} onChange={(e) => chooseCustomer(e.target.value)} required>
               <option value="">Select a customer...</option>
               {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>{customer.name}</option>
+                <option key={customer.id} value={customer.id}>{customer.name}{customer.type === "staff" ? " (staff)" : ""}</option>
               ))}
               <option value="new">+ Add new customer</option>
             </SelectField>

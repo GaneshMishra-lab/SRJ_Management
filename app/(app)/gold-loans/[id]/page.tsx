@@ -4,14 +4,13 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { goldLoan, goldLoanPayment, oldItem } from "@/db/schema/sales";
-import { addGoldLoanPayment, defaultGoldLoan } from "@/app/actions/goldloans";
+import { addGoldLoanPayment, clearGoldLoan, defaultGoldLoan, giveMoreOnGoldLoan } from "@/app/actions/goldloans";
 import { ActionForm } from "@/components/ActionForm";
-import { Card, DateField, linkClass, ModeField, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
+import { Card, DateField, Field, linkClass, ModeField, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateOnly, dateTime, grams, inr, parseDbDate } from "@/lib/format";
-import { accruedInterest } from "@/lib/interest";
-import { round2 } from "@/lib/pricing";
+import { loanFigures, PENALTY_GRACE_MONTHS, penaltyStartsOn } from "@/lib/interest";
 
 export default async function GoldLoanPage({ params }: { params: Promise<{ id: string }> }) {
   await getCurrentUser();
@@ -29,14 +28,19 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
   const payments = await db.select().from(goldLoanPayment).where(eq(goldLoanPayment.loan, id)).orderBy(asc(goldLoanPayment.date));
   const [takenOver] = await db.select({ id: oldItem.id, date: oldItem.date }).from(oldItem).where(eq(oldItem.goldLoan, id));
 
-  const principalPayments = payments.filter((payment) => payment.type === "principal");
-  const interestPaid = payments.filter((payment) => payment.type === "interest").reduce((sum, payment) => sum + (payment.amt ?? 0), 0);
-  // Interest stops building once the loan is closed or defaulted; a default counts from the day the pledge was taken over.
-  const until = loan.status === "active" ? new Date() : takenOver?.date ? parseDbDate(takenOver.date) : loan.updatedAt;
-  const accrued = accruedInterest(loan, principalPayments, until);
-  const principalDue = round2((loan.amt ?? 0) - (loan.amtPaid ?? 0));
-  const interestDue = Math.max(0, round2(accrued - interestPaid));
+  // Interest stops building once the loan is closed or defaulted: at the day it was cleared, or the
+  // day the pledge was taken over.
+  const lastPrincipal = payments.filter((payment) => payment.type === "principal").at(-1)?.date;
+  const until = loan.status === "active" ? new Date()
+    : takenOver?.date ? parseDbDate(takenOver.date)
+    : lastPrincipal ? parseDbDate(lastPrincipal) : loan.updatedAt;
+  const { firstAmt, accrued, months, discount, principalDue, interestDue, penalty, penaltyExtra, penaltyWaived, penaltyDue } = loanFigures(loan, payments, until);
+  const gaveMore = firstAmt !== (loan.amt ?? 0);
   const active = loan.status === "active";
+  const totalDue = principalDue + interestDue + penaltyDue;
+  const penaltyFrom = active && penalty === 0 ? penaltyStartsOn(loan, payments, until) : null;
+  const labels: Record<string, string> = { topup: "more given", penalty_waiver: "penalty lowered", penalty_extra: "penalty raised" };
+  const typeLabel = (type: string | null) => (type ? labels[type] ?? type : "");
 
   return (
     <div className="space-y-6">
@@ -47,11 +51,22 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
       />
 
       <Stats items={[
-        { name: "Loan amount", value: inr(loan.amt) },
+        { name: gaveMore ? "Total given" : "Loan amount", value: inr(loan.amt), note: gaveMore ? `${inr(firstAmt)} at first` : undefined },
         { name: "Principal due", value: inr(principalDue) },
-        { name: "Interest so far", value: inr(accrued) },
-        { name: "Interest unpaid", value: inr(interestDue) },
+        { name: "Interest so far", value: inr(accrued), note: `${months} ${months === 1 ? "month" : "months"}` },
+        { name: "Interest unpaid", value: inr(interestDue), note: discount > 0 ? `${inr(discount)} let go as discount` : undefined },
+        ...(active || penalty > 0 || penaltyExtra > 0 ? [{
+          name: "Penalty unpaid", value: inr(penaltyDue), tone: penaltyDue > 0 ? "warn" as const : undefined,
+          note: penalty > 0 || penaltyExtra > 0
+            ? [`${inr(penalty)} by the rule`, penaltyExtra > 0 && `${inr(penaltyExtra)} added`, penaltyWaived > 0 && `${inr(penaltyWaived)} let go`].filter(Boolean).join(" · ")
+            : penaltyFrom ? `Starts ${dateOnly(penaltyFrom)} if unpaid` : "None: interest is up to date",
+        }] : []),
       ]} />
+      {active && (
+        <p className="text-sm text-fg-3">
+          Interest left unpaid for more than {PENALTY_GRACE_MONTHS} months after it falls due earns penalty at {loan.interest ?? 0}% a month. Paying interest clears the oldest first.
+        </p>
+      )}
 
       {loan.status === "closed" && interestDue > 0 && (
         <p className="text-sm text-accent">Principal is fully repaid, but {inr(interestDue)} of interest was never collected.</p>
@@ -66,7 +81,7 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
             <ul className="divide-y divide-line text-sm">
               {payments.map((payment) => (
                 <li key={payment.id} className="flex justify-between py-2">
-                  <span className="text-fg-2">{dateTime(payment.date)} · {payment.type} · {payment.mode}</span>
+                  <span className="text-fg-2">{dateTime(payment.date)} · {typeLabel(payment.type)}{payment.mode ? ` · ${payment.mode}` : ""}</span>
                   <span className="text-fg">{inr(payment.amt)}</span>
                 </li>
               ))}
@@ -75,9 +90,31 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
         </Card>
 
         {active && (
-          <Card title="Receive payment" hint="Repaying all the principal closes the loan and releases the pledge.">
+          <Card title="Clear girvi" hint={`Takes the ${inr(principalDue)} of principal due and the interest and penalty the customer pays. Interest not taken is written as a discount. The penalty can be lowered or raised; the change is recorded. This closes the loan; return the pledge.`}>
+            <ActionForm action={clearGoldLoan.bind(null, id)} submitLabel="Clear and return pledge">
+              <p className="text-sm text-fg-2">
+                Due today: {inr(principalDue)} principal + {inr(interestDue)} interest{penaltyDue > 0 && <> + {inr(penaltyDue)} penalty</>} = <span className="font-medium text-fg">{inr(totalDue)}</span>
+              </p>
+              <Rupees label="Interest taken (₹)" name="interest" min="0" max={String(interestDue)} defaultValue={String(interestDue)} required />
+              <Rupees
+                label="Penalty taken (₹)" name="penalty" min="0" defaultValue={String(penaltyDue)} required
+                hint={`${inr(penaltyDue)} by the rule. Lower it to let some go, or raise it to charge more.`}
+              />
+              <Field label="Reason (optional)" name="desc" type="text" placeholder="e.g. penalty reduced on request" />
+              <ModeField label="Received in" />
+              <DateField />
+            </ActionForm>
+          </Card>
+        )}
+
+        {active && (
+          <Card title="Receive part payment" hint="Interest, or part of the principal. Principal repaid lowers interest from the next month.">
             <ActionForm action={addGoldLoanPayment.bind(null, id)} submitLabel="Record payment">
-              <SelectField label="Towards" name="type" options={[{ value: "interest", label: "Interest" }, { value: "principal", label: "Principal" }]} />
+              <SelectField label="Towards" name="type" options={[
+                { value: "interest", label: "Interest" },
+                { value: "principal", label: "Principal" },
+                ...(penaltyDue > 0 ? [{ value: "penalty", label: "Penalty" }] : []),
+              ]} />
               <Rupees label="Amount (₹)" name="amt" required />
               <ModeField label="Received in" />
               <DateField />
@@ -86,7 +123,17 @@ export default async function GoldLoanPage({ params }: { params: Promise<{ id: s
         )}
 
         {active && (
-          <Card title="Customer defaulted" hint={`The pledge becomes the shop's old metal at ${inr(principalDue + interestDue)} (principal plus unpaid interest). This cannot be undone.`}>
+          <Card title="Give more money" hint="Added to this loan. Interest is charged on it for the whole month of the loan it is taken in.">
+            <ActionForm action={giveMoreOnGoldLoan.bind(null, id)} submitLabel="Give more">
+              <Rupees label="Amount (₹)" name="amt" required />
+              <ModeField label="Paid from" />
+              <DateField />
+            </ActionForm>
+          </Card>
+        )}
+
+        {active && (
+          <Card title="Customer defaulted" hint={`The pledge becomes the shop's old metal at ${inr(totalDue)} (principal plus unpaid interest${penaltyDue > 0 ? " and penalty" : ""}). This cannot be undone.`}>
             <ActionForm action={defaultGoldLoan.bind(null, id)} submitLabel="Take over pledge">
               <SelectField label="Metal" name="metal" options={["Gold", "Silver", "Phuli"]} />
               <Percent label="Melting (%)" name="melting" min="0.001" required />

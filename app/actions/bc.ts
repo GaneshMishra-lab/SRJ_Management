@@ -1,10 +1,10 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { bc, bcPayment } from "@/db/schema/finance";
+import { bc, bcPayment, lend, lendEntry } from "@/db/schema/finance";
 import { bcFigures, bcTotals, maturesOn } from "@/lib/bc";
 import { getCurrentUser, logAudit } from "@/lib/dal";
 import { resolveEntity } from "@/lib/entities";
@@ -12,6 +12,7 @@ import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/
 import { dateOnly, inr, istDate } from "@/lib/format";
 import { eraseCash, isCashMode, locationFor, mayCorrect, recordCash } from "@/lib/ledger";
 import { round2 } from "@/lib/pricing";
+import { heldFor } from "@/lib/sale-payments";
 
 // A BC is started, paid into month by month, matured once its term has run (the shop decides then
 // whether the bonus is given), and spent on sale bills. Instalments are money in under the day
@@ -72,13 +73,25 @@ export async function createBc(_prev: FormState, formData: FormData): Promise<Fo
   redirect(`/bc/${id}`);
 }
 
+// An instalment paid out of money the customer has left with the shop (their सावकारी account).
+// No cash moves: the deposit goes down by what the BC goes up. The lend entry carries the same
+// time and amount as the instalment, which is how removing the instalment finds it again.
+async function takeFromDeposit(tx: Tx, userId: number, bcId: string, customer: string, amt: number, date: string) {
+  const { lendId, held } = await heldFor(tx, customer);
+  if (!lendId || amt > held) throw new UserError(`The shop holds only ${inr(held)} for this customer.`);
+  const [payment] = await tx.insert(bcPayment).values({ bc: bcId, date, amt, mode: "lend" }).returning();
+  const [entry] = await tx.insert(lendEntry).values({ lend: lendId, date, type: "repayment", amt, mode: "bc" }).returning();
+  await logAudit(tx, userId, { tableName: "bc_payment", recordId: payment.id, action: "insert", newValues: payment });
+  await logAudit(tx, userId, { tableName: "lend_entry", recordId: entry.id, action: "insert", newValues: { ...entry, bcPayment: payment.id } });
+}
+
 export async function addBcPayment(bcId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await getCurrentUser();
   const amt = round2(num(formData, "amt"));
   const mode = text(formData, "mode");
   if (!isUuid(bcId)) return { error: "BC not found." };
   if (amt <= 0) return { error: "Enter an amount above zero." };
-  if (!isCashMode(mode)) return { error: "Choose cash or online." };
+  if (!isCashMode(mode) && mode !== "lend") return { error: "Choose cash, online or the customer's deposit." };
 
   try {
     const date = entryDate(formData);
@@ -90,14 +103,20 @@ export async function addBcPayment(bcId: string, _prev: FormState, formData: For
       const { paid } = await bcTotals(tx, bcId);
       const left = round2(row.instalment * row.months - paid);
       if (amt > left) throw new UserError(left > 0 ? `Only ${inr(left)} is left to pay on this BC.` : "This BC is already paid in full.");
-      await takeInstalment(tx, user.id, bcId, amt, mode, date);
+      if (mode === "lend") await takeFromDeposit(tx, user.id, bcId, row.customer, amt, date);
+      else if (isCashMode(mode)) await takeInstalment(tx, user.id, bcId, amt, mode, date);
     });
   } catch (error) {
     return fail(error, "Could not record the instalment.");
   }
 
   revalidateBc(bcId);
-  return { success: "Instalment recorded." };
+  if (mode === "lend") {
+    revalidatePath("/loans");
+    revalidatePath("/loans/[kind]/[id]", "page");
+    revalidatePath("/parties");
+  }
+  return { success: mode === "lend" ? "Instalment paid from the customer's deposit." : "Instalment recorded." };
 }
 
 // An instalment entered by mistake. Today's are anyone's to remove; an earlier day's are the
@@ -115,6 +134,19 @@ export async function deleteBcPayment(paymentId: string): Promise<FormState> {
       if (row.maturedAt) throw new UserError("The BC is matured. Undo the maturity first.");
       if (!mayCorrect(user.role, payment.date)) throw new UserError("Only the owner can remove an instalment of an earlier day.");
       await eraseCash(tx, "bc_payment", paymentId);
+      // Paid from the deposit: the money goes back to being held for the customer.
+      if (payment.mode === "lend") {
+        const [account] = await tx.select({ id: lend.id }).from(lend).where(eq(lend.lender, row.customer)).for("update");
+        const [entry] = account && payment.date
+          ? await tx.select().from(lendEntry).where(and(
+            eq(lendEntry.lend, account.id), eq(lendEntry.mode, "bc"), eq(lendEntry.type, "repayment"),
+            eq(lendEntry.date, payment.date), eq(lendEntry.amt, payment.amt ?? 0),
+          )).limit(1)
+          : [];
+        if (!entry) throw new UserError("The deposit entry for this instalment was not found; nothing was removed.");
+        await tx.delete(lendEntry).where(eq(lendEntry.id, entry.id));
+        await logAudit(tx, user.id, { tableName: "lend_entry", recordId: entry.id, action: "delete", oldValues: entry });
+      }
       await tx.delete(bcPayment).where(eq(bcPayment.id, paymentId));
       await logAudit(tx, user.id, { tableName: "bc_payment", recordId: paymentId, action: "delete", oldValues: payment });
       return row.id;
