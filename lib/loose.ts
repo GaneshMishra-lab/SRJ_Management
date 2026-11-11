@@ -93,13 +93,14 @@ export const lotTerms = (lot: { melting: number; wastage: number; making: number
 // When a counted lot's last piece has gone, whatever weight is left on the book is the scale's
 // error. Up to WRITE_OFF_LIMIT it is written off as its own entry, so the lot closes at 0 pieces
 // and 0 g; a bigger gap is left for someone to weigh. Returns the weight written off, if any.
-export async function closeEmptyLot(executor: Executor & Pick<typeof db, "select">, lot: LotTerms, date?: string) {
+// `sourceId` is the sale line that sold the last piece, so a corrected bill can find it again.
+export async function closeEmptyLot(executor: Executor & Pick<typeof db, "select">, lot: LotTerms, date?: string, sourceId?: string) {
   const [found] = (await looseBalances(executor, [lot.itemTypeId])).filter((row) => lotKey(row) === lotKey(lot));
   if (!found?.leftover || Math.abs(found.weight) > WRITE_OFF_LIMIT) return null;
   await recordLoose(executor, {
     itemType: lot.itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making,
     direction: found.weight > 0 ? "out" : "in", weight: Math.abs(found.weight),
-    sourceTable: "weighing_difference", desc: "Weighing difference: last piece sold", date,
+    sourceTable: "weighing_difference", sourceId, desc: "Weighing difference: last piece sold", date,
   });
   return found.weight;
 }

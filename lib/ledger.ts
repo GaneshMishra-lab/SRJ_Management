@@ -23,6 +23,7 @@ export async function recordCash(
     sourceId?: string;
     desc: string;
     date?: string; // when the money really moved; now if left out
+    createdAt?: Date; // kept as first written when a corrected bill writes its entries again
   },
 ) {
   const [row] = await executor.insert(cashLedger).values({

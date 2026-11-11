@@ -4,7 +4,8 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { itemStock, itemType, oldItem, oldItemPayment } from "@/db/schema/sales";
-import { meltOldItem, payOldItem, refurbishOldItem } from "@/app/actions/oldgold";
+import { deleteOldItem, meltOldItem, payOldItem, refurbishOldItem } from "@/app/actions/oldgold";
+import { RemoveButton } from "@/components/controls";
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DateField, Field, Grams, linkClass, ModeField, PageHeader, Percent, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
@@ -13,7 +14,7 @@ import { dateOnly, dateTime, grams, inr } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
 
 export default async function OldItemPage({ params }: { params: Promise<{ id: string }> }) {
-  await getCurrentUser();
+  const user = await getCurrentUser();
   const { id } = await params;
   if (!isUuid(id)) notFound();
 
@@ -97,6 +98,15 @@ export default async function OldItemPage({ params }: { params: Promise<{ id: st
               </div>
               <DateField />
             </ActionForm>
+          </Card>
+        )}
+
+        {user.role === "owner" && item.status === "vault" && !item.saleBill && !item.order && !item.goldLoan && (
+          <Card title="Delete this purchase" hint={`Owner only. For an entry made by mistake: the old metal is taken off the books${payments.length > 0 ? `, and the ${inr(item.paidAmt)} paid for it comes out of the cash book on the day it was paid` : ""}. This cannot be undone.`}>
+            <div className="flex items-center gap-3 text-sm text-fg-2">
+              <RemoveButton action={deleteOldItem.bind(null, id)} label="Delete this old metal purchase" />
+              <span>Delete</span>
+            </div>
           </Card>
         )}
       </div>

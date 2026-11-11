@@ -106,6 +106,13 @@
       "when": 1794039838010,
       "tag": "0014_loose_lots",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794146121423,
+      "tag": "0015_langdi_purity_cut",
+      "breakpoints": true
     }
   ]
 }

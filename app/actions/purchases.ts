@@ -7,7 +7,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { convertStandard, Standard } from "@/lib/standards";
 import { Tx } from "@/lib/entities";
-import { isBullionStandard, isStandard, langdiToFine, recordMetal } from "@/lib/metal";
+import { isBullionStandard, isStandard, langdiToFine, purityCutOf, recordMetal } from "@/lib/metal";
 import { getCurrentUser, logAudit } from "@/lib/dal";
 import { parseDue } from "@/lib/due";
 import { parseDbDate } from "@/lib/format";
@@ -313,20 +313,24 @@ export async function addBillLangdiPayment(billId: string, _prev: FormState, for
   if (weight <= 0) return { error: "Enter the langdi weight given." };
   if (testedPurity <= 0 || testedPurity > 100) return { error: "Tested purity must be between 0 and 100." };
   if (deduction < 0 || deduction >= weight) return { error: "Refining deduction must be less than the weight." };
+  const cutOrError = purityCutOf(formData.get("purityCut"), testedPurity);
+  if ("error" in cutOrError) return cutOrError;
+  const { cut } = cutOrError;
+  const agreed = round3(testedPurity - cut);
 
   try {
     const date = entryDate(formData);
     await db.transaction(async (tx) => {
-      const { row, standard, fine, amt } = await applyMetalPayment(tx, billId, (std) => langdiToFine(weight, testedPurity, deduction, std));
+      const { row, standard, fine, amt } = await applyMetalPayment(tx, billId, (std) => langdiToFine(weight, agreed, deduction, std));
       const [payment] = await tx.insert(billPayment).values({
         bill: billId, date, amt, mode: "langdi", fineWeight: fine, standard,
       }).returning();
       await tx.insert(langdiLedger).values({
-        date, metal: row.metal ?? "Gold", direction: "out", weight, testedPurity,
+        date, metal: row.metal ?? "Gold", direction: "out", weight, testedPurity, purityCut: cut || null,
         refiningDeduction: deduction, fineWeight: fine, standard,
         sourceTable: "bill_payment", sourceId: payment.id, entity: row.supplier, desc: "Given to supplier against a bill",
       });
-      await logAudit(tx, user.id, { tableName: "bill_payment", recordId: payment.id, action: "insert", newValues: { ...payment, langdiWeight: weight, testedPurity, deduction } });
+      await logAudit(tx, user.id, { tableName: "bill_payment", recordId: payment.id, action: "insert", newValues: { ...payment, langdiWeight: weight, testedPurity, purityCut: cut, deduction } });
     });
   } catch (error) {
     return fail(error, "Could not record the langdi payment.");

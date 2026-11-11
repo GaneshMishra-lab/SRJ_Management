@@ -249,6 +249,37 @@ a.daybook-row:hover {
   margin-left: 0.55em;
 }
 
+/* The pieces of one sale bill are bracketed together in ink, as a hand would join them: a stroke
+   down the left of the writing from the first line to the last, turned in at each end. */
+.daybook-line[data-bill] .daybook-what {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.daybook-line[data-bill] .daybook-what::before {
+  content: "";
+  position: absolute;
+  left: 0.3rem;
+  width: 0.35rem;
+  top: 0;
+  bottom: 0;
+  border-left: var(--stroke) solid currentColor;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.daybook-line[data-bill="first"] .daybook-what::before {
+  top: calc(var(--line) * 0.3 + var(--drop));
+  border-top: var(--stroke) solid currentColor;
+  border-top-left-radius: 0.3rem;
+}
+
+.daybook-line[data-bill="last"] .daybook-what::before {
+  bottom: calc(var(--line) * 0.7 - var(--drop) - 0.55em);
+  border-bottom: var(--stroke) solid currentColor;
+  border-bottom-left-radius: 0.3rem;
+}
+
 /* A weight keeps its unit, and a payment mode its brackets, when a long line wraps. */
 .daybook-what .daybook-more[data-whole] {
   white-space: nowrap;

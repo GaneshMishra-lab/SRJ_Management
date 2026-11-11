@@ -125,7 +125,7 @@ export const goldLoanPayment = pgTable("gold_loan_payment", {
 });
 
 // Langdi (melted old metal) is tracked by weight; pieces is only a soft count.
-// fine = (weight - refining_deduction) × tested_purity ÷ standard received.
+// fine = (weight - refining_deduction) × (tested_purity - purity_cut) ÷ standard received.
 export const langdiLedger = pgTable("langdi_ledger", {
   ...auditTimestamps(),
   id: uuid("id").defaultRandom().primaryKey(),
@@ -136,6 +136,8 @@ export const langdiLedger = pgTable("langdi_ledger", {
   pieces: integer("pieces"),
   estPurity: pct("est_purity"),
   testedPurity: pct("tested_purity"),
+  // Purity points taken off the tested figure as agreed for this trade (76.2 tested, 0.1 cut → 76.1).
+  purityCut: pct("purity_cut"),
   refiningDeduction: grams("refining_deduction"),
   fineWeight: grams("fine_weight"),
   standard: text("standard"),

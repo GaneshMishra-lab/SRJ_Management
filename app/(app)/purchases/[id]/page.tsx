@@ -196,12 +196,13 @@ export default async function PurchaseBillPage({ params }: { params: Promise<{ i
         )}
 
         {due > 0 && (
-          <Card title="Pay in langdi" hint="(weight − deduction) × tested purity, counted in this bill's standard.">
+          <Card title="Pay in langdi" hint="(weight − deduction) × (tested purity − agreed cut), counted in this bill's standard. E.g. tested 76.2 with a 0.1 cut is valued at 76.1.">
             <ActionForm action={addBillLangdiPayment.bind(null, id)} submitLabel="Record langdi payment">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Langdi weight (g)" name="weight" type="number" step="0.001" min="0.001" required />
-                <Field label="Tested purity (%)" name="testedPurity" type="number" step="0.001" min="0" max="100" required />
                 <Field label="Deduction (g)" name="deduction" type="number" step="0.001" min="0" defaultValue="0" />
+                <Field label="Tested purity (%)" name="testedPurity" type="number" step="0.001" min="0" max="100" required />
+                <Field label="Purity cut (%)" name="purityCut" type="number" step="0.001" min="0" max="100" defaultValue="0" />
               </div>
               <DateField />
             </ActionForm>

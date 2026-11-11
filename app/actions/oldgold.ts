@@ -1,11 +1,12 @@
 "use server";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
+import { cashLedger } from "@/db/schema/ledger";
 import { itemStock, langdiLedger, oldItem, oldItemPayment } from "@/db/schema/sales";
-import { getCurrentUser, logAudit } from "@/lib/dal";
+import { getCurrentUser, logAudit, requireOwner } from "@/lib/dal";
 import { huidOf, nextLabel, resolveEntity, Tx } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
@@ -169,4 +170,36 @@ export async function refurbishOldItem(id: string, _prev: FormState, formData: F
 
   revalidateOldGold(id);
   return { success: "Added to stock." };
+}
+
+// An old metal purchase entered by mistake is taken off the books entirely. Owner only. Only a
+// purchase made on its own and still in the vault: one taken in on a sale bill, an order or a
+// defaulted pledge belongs to that record, and a melted or refurbished one has moved on. Money paid
+// for it comes out of the cash book with it, on whatever day it was paid.
+export async function deleteOldItem(id: string): Promise<FormState> {
+  const owner = await requireOwner();
+  if (!isUuid(id)) return { error: "Old item not found." };
+
+  try {
+    await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(oldItem).where(eq(oldItem.id, id)).for("update");
+      if (!row) throw new UserError("Old item not found.");
+      if (row.saleBill || row.order || row.goldLoan) throw new UserError("This came in on a sale bill, an order or a gold loan, so it is changed there, not deleted here.");
+      if (row.status !== "vault" || row.langdiEntry) throw new UserError("Only an item still in the vault can be deleted.");
+
+      const payments = await tx.select().from(oldItemPayment).where(eq(oldItemPayment.oldItem, id));
+      if (payments.length > 0) {
+        const ids = payments.map((payment) => payment.id);
+        await tx.delete(cashLedger).where(and(eq(cashLedger.sourceTable, "old_item_payment"), inArray(cashLedger.sourceId, ids)));
+        await tx.delete(oldItemPayment).where(inArray(oldItemPayment.id, ids));
+      }
+      await tx.delete(oldItem).where(eq(oldItem.id, id));
+      await logAudit(tx, owner.id, { tableName: "old_item", recordId: id, action: "delete", oldValues: { ...row, payments } });
+    });
+  } catch (error) {
+    return fail(error, "Could not delete the old metal.");
+  }
+
+  revalidateOldGold(id);
+  redirect("/old-gold");
 }

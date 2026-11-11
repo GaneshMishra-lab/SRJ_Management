@@ -1,0 +1,1 @@
+ALTER TABLE "langdi_ledger" ADD COLUMN "purity_cut" numeric(7, 3);

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { itemType, looseStockLedger } from "@/db/schema/sales";
-import { checkLooseStock, setLooseCounted, writeOffLooseLeftover } from "@/app/actions/stock";
+import { checkLooseStock, moveLooseToMetal, setLooseCounted, writeOffLooseLeftover } from "@/app/actions/stock";
 import { ActionForm } from "@/components/ActionForm";
 import { Card, DataTable, DateField, Field, Grams, Notice, PageHeader, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
@@ -10,6 +10,7 @@ import { isUuid } from "@/lib/form";
 import { dateTime, grams } from "@/lib/format";
 import { looseBalances, loosePieces, lotTerms, WRITE_OFF_LIMIT } from "@/lib/loose";
 import { round3 } from "@/lib/pricing";
+import { fineStandardOf } from "@/lib/standards";
 import { CountedSwitch } from "./CountedSwitch";
 
 const causes: Record<string, string> = {
@@ -19,6 +20,7 @@ const causes: Record<string, string> = {
   stock_check: "Stock check",
   weighing_difference: "Weighing difference",
   opening: "Opening stock",
+  metal_transfer: "Moved to fine metal",
 };
 
 // A lot is sent from a form as "melting|wastage|making"; the type is in the page's address.
@@ -38,6 +40,10 @@ export default async function LooseStockPage({ params }: { params: Promise<{ typ
   const pieces = onHand.reduce((sum, row) => sum + row.pieces, 0);
   const about = loosePieces(weight, type.piecesPerGram);
   const leftovers = onHand.filter((row) => row.leftover);
+  // Coins, biscuits and slabs at 99.5 or 99.9 can be moved into the fine metal ledger to pay a supplier.
+  const fineLots = type.metal === "Gold" || type.metal === "Silver"
+    ? onHand.filter((row) => row.weight > 0 && fineStandardOf(row.melting))
+    : [];
 
   const movements = await db
     .select()
@@ -95,6 +101,19 @@ export default async function LooseStockPage({ params }: { params: Promise<{ typ
               <ActionForm action={writeOffLooseLeftover.bind(null, typeId)} submitLabel="Write off">
                 <SelectField label="Lot" name="lot" options={leftovers.map((row) => ({ value: lotValue(row), label: `${lotTerms(row)} · ${grams(row.weight)} left` }))} />
                 <Field label="Reason" name="reason" type="text" placeholder="e.g. Box empty, scale difference" required />
+                <DateField />
+              </ActionForm>
+            </Card>
+          )}
+
+          {fineLots.length > 0 && (
+            <Card title="Move to fine metal" hint={`To hand a coin, biscuit or slab to a supplier: it leaves this stock and is added to fine ${type.metal} (99.9 → 999, 99.5 → 995). Then record it on the purchase bill with "Pay in fine". No sale or cash is recorded.`}>
+              <ActionForm action={moveLooseToMetal.bind(null, typeId)} submitLabel="Move to fine metal">
+                <SelectField label="Lot" name="lot" options={fineLots.map((row) => ({ value: lotValue(row), label: `${lotTerms(row)} → ${fineStandardOf(row.melting)} · ${type.counted ? `${row.pieces} pcs, ` : ""}${grams(row.weight)} in stock` }))} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Grams label="Weight moved (g)" name="weight" required />
+                  {type.counted && <Field label="Pieces moved" name="pieces" type="number" step="1" min="1" required />}
+                </div>
                 <DateField />
               </ActionForm>
             </Card>

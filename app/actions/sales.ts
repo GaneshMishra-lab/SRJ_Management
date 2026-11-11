@@ -1,54 +1,19 @@
 "use server";
 
-import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { entity } from "@/db/schema/entities";
-import { bc, lendEntry } from "@/db/schema/finance";
-import {
-  itemApproval,
-  itemOrder,
-  itemPurchased,
-  itemSale,
-  itemSaleBill,
-  itemSaleDetails,
-  itemStock,
-  itemType,
-  oldItem,
-} from "@/db/schema/sales";
-import { closeEmptyLot, looseBalances, lotKey, lotTerms, recordLoose, WRITE_OFF_LIMIT } from "@/lib/loose";
-import { bcTotals } from "@/lib/bc";
+import { lendEntry } from "@/db/schema/finance";
+import { itemOrder, itemSale, itemSaleBill, itemSaleDetails, itemStock, oldItem } from "@/db/schema/sales";
+import { recordLoose } from "@/lib/loose";
 import { getCurrentUser, logAudit, requireOwner } from "@/lib/dal";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
-import { dateOnly, inr, istDate, parseDbDate } from "@/lib/format";
+import { dateOnly, istDate, parseDbDate } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
-import { priceSaleLine, purityRate, round2, round3 } from "@/lib/pricing";
-import { heldFor, paySaleBill, payOldDues } from "@/lib/sale-payments";
+import { round2 } from "@/lib/pricing";
+import { paySaleBill } from "@/lib/sale-payments";
+import { moveAlsoPaid, parseSale, type SalePayload, unwriteSale, writeSale } from "@/lib/sale-write";
 
-export type SalePayload = {
-  date?: string; // the bill's own day (YYYY-MM-DD) when it is entered later; today if left out
-  time?: string; // the time on that day (HH:MM); the time now if left out
-  customerId?: string;
-  newCustomer?: { name: string; contact?: string };
-  // Delivering an order: its piece must be on the bill and its advance is applied.
-  orderId?: string;
-  items: Array<{ stockId: string; rate: number; makingPct: number }>;
-  // Loose stock sold by weight out of one lot (type, melting, wastage, making); pieces too for a counted type.
-  loose?: Array<{ itemTypeId: string; melting: number; wastage: number; making: number; weight: number; pieces?: number | null; rate: number; makingPct: number }>;
-  // Old metal the customer gives in exchange, set against the bill.
-  oldGold?: Array<{ metal: string; weight: number; melting: number; amt: number }>;
-  // Matured BCs of the customer spent on the bill, and how much of each.
-  bcs?: Array<{ bcId: string; amt: number }>;
-  // Money the shop holds for the customer (their सावकारी account), spent on the bill.
-  fromLend?: number;
-  discount: number;
-  // What the customer pays now. Beyond what this bill needs, it pays what they already owe, oldest first.
-  paidAmt: number;
-  mode: string;
-  // The day the money is entered in the cash book, when later than the bill's own day:
-  // a corrected bill replacing a cancelled one takes its payment on the day of correction.
-  paymentDate?: string;
-};
 
 function revalidateSales() {
   revalidatePath("/sales");
@@ -68,264 +33,14 @@ export async function createSale(payload: SalePayload) {
   const user = await getCurrentUser();
 
   try {
-    const stockIds = payload.items.map((item) => item.stockId);
-    const loose = (payload.loose ?? []).map((line) => ({
-      itemTypeId: line.itemTypeId,
-      melting: round3(line.melting),
-      wastage: round3(line.wastage || 0),
-      making: round2(line.making || 0),
-      weight: round3(line.weight),
-      pieces: line.pieces ?? null,
-      rate: round2(line.rate),
-      makingPct: line.makingPct,
-    }));
-    if (stockIds.length === 0 && loose.length === 0) throw new UserError("Add at least one piece or loose item to the bill.");
-    if (new Set(stockIds).size !== stockIds.length || !stockIds.every(isUuid)) {
-      throw new UserError("A piece is listed twice or is not valid.");
-    }
-    if (payload.items.some((item) => !(item.rate > 0) || !(item.makingPct >= 0))) {
-      throw new UserError("Every piece needs a rate above zero and a making % of zero or more.");
-    }
-    if (loose.some((line) => !isUuid(line.itemTypeId) || !(line.weight > 0) || !(line.rate > 0) || !(line.makingPct >= 0))) {
-      throw new UserError("Every loose item needs a weight and a rate above zero, and a making % of zero or more.");
-    }
-    if (loose.some((line) => line.pieces !== null && !(Number.isInteger(line.pieces) && line.pieces > 0))) {
-      throw new UserError("Pieces sold must be a whole number above zero.");
-    }
-    if (new Set(loose.map(lotKey)).size !== loose.length) {
-      throw new UserError("A loose item is listed twice. Put its whole weight on one line.");
-    }
-    const discount = round2(payload.discount || 0);
-    const paidAmt = round2(payload.paidAmt || 0);
-    const fromLend = round2(payload.fromLend || 0);
-    if (discount < 0 || paidAmt < 0 || fromLend < 0) throw new UserError("Discount and amounts paid cannot be negative.");
-    if (paidAmt > 0 && !isCashMode(payload.mode)) throw new UserError("Choose how the customer paid.");
-
-    const oldGold = (payload.oldGold ?? []).map((old) => ({
-      metal: old.metal,
-      weight: round3(old.weight),
-      melting: round3(old.melting),
-      amt: round2(old.amt),
-    }));
-    if (oldGold.some((old) => !["Gold", "Silver", "Phuli"].includes(old.metal) || old.weight <= 0 || old.amt <= 0 || old.melting <= 0 || old.melting > 100)) {
-      throw new UserError("Each old item needs a metal, weight, melting and agreed value.");
-    }
-    if (payload.orderId && !isUuid(payload.orderId)) throw new UserError("Order not found.");
-    const bcs = (payload.bcs ?? []).map((use) => ({ bcId: use.bcId, amt: round2(use.amt) })).filter((use) => use.amt !== 0);
-    if (bcs.some((use) => !isUuid(use.bcId) || !(use.amt > 0)) || new Set(bcs.map((use) => use.bcId)).size !== bcs.length) {
-      throw new UserError("A BC on this bill is not valid.");
-    }
-    // The bill, old metal taken in and any payment made with it all carry the bill's own date.
-    const date = entryDate(payload.date, payload.time);
-    const paidOn = payload.paymentDate ? entryDate(payload.paymentDate) : date;
-    if (parseDbDate(paidOn) < parseDbDate(date)) throw new UserError("The payment date cannot be before the bill date.");
-
+    const sale = parseSale(payload);
     const saleId = await db.transaction(async (tx) => {
-      let customerId = payload.customerId;
-      if (!customerId) {
-        const name = payload.newCustomer?.name.trim();
-        if (!name) throw new UserError("Choose a customer or enter a new customer's name.");
-        const [customer] = await tx.insert(entity).values({
-          name,
-          type: "customer",
-          contact: payload.newCustomer?.contact?.trim() || null,
-        }).returning();
-        await logAudit(tx, user.id, { tableName: "entity", recordId: customer.id, action: "insert", newValues: customer });
-        customerId = customer.id;
-      }
-
-      // Claim the pieces; only ones in the shop or out on approval can be sold.
-      const sold = stockIds.length === 0 ? [] : await tx.update(itemStock)
-        .set({ status: "sold", updatedAt: new Date() })
-        .where(and(inArray(itemStock.id, stockIds), inArray(itemStock.status, ["stock", "on_approval"])))
-        .returning({ id: itemStock.id, netWeight: itemStock.netWeight, melting: itemStock.melting });
-      if (sold.length !== stockIds.length) {
-        throw new UserError("One of these pieces is no longer available. Reload and try again.");
-      }
-      if (stockIds.length > 0) {
-        await tx.update(itemApproval)
-          .set({ dateBack: date, outcome: "sold", updatedAt: new Date() })
-          .where(and(inArray(itemApproval.item, stockIds), isNull(itemApproval.dateBack)));
-      }
-      const pieces = new Map(sold.map((piece) => [piece.id, piece]));
-
-      // Loose metal: lock its types so two bills cannot both sell the same grams, then check what is there.
-      if (loose.length > 0) {
-        const typeIds = [...new Set(loose.map((line) => line.itemTypeId))];
-        const types = await tx.select({ id: itemType.id, name: itemType.name, counted: itemType.counted }).from(itemType)
-          .where(and(inArray(itemType.id, typeIds), eq(itemType.loose, true)))
-          .for("update");
-        const onHand = await looseBalances(tx, typeIds);
-        for (const line of loose) {
-          const type = types.find((row) => row.id === line.itemTypeId);
-          if (!type) throw new UserError("A loose item on this bill is not valid.");
-          const lot = onHand.find((row) => lotKey(row) === lotKey(line));
-          const have = lot?.weight ?? 0;
-          const name = `${type.name} (${lotTerms(line)})`;
-          if (type.counted) {
-            if (!line.pieces) throw new UserError(`Enter how many pieces of ${name} are sold.`);
-            if (line.pieces > (lot?.pieces ?? 0)) throw new UserError(`Only ${Math.max(0, lot?.pieces ?? 0)} pieces of ${name} are in stock.`);
-          } else line.pieces = null;
-          // Selling the last pieces of a lot, the scale may read a little over the book: allow it
-          // up to the write-off limit, and the lot is closed at zero after the sale.
-          const lastPieces = type.counted && line.pieces === lot?.pieces;
-          if (line.weight > have + (lastPieces ? WRITE_OFF_LIMIT : 0) + 0.0005) {
-            throw new UserError(`Only ${round3(Math.max(0, have))} g of ${name} is in stock.`);
-          }
-        }
-      }
-
-      // Delivering an order: close it, and price its piece at the booked rate if one was fixed.
-      let advance = 0;
-      const bookedRates = new Map<string, number>();
-      if (payload.orderId) {
-        const [order] = await tx.update(itemOrder)
-          .set({ status: "dispatched", updatedAt: new Date() })
-          .where(and(eq(itemOrder.id, payload.orderId), eq(itemOrder.customer, customerId), ne(itemOrder.status, "dispatched")))
-          .returning();
-        if (!order) throw new UserError("That order is not this customer's, or is already delivered.");
-
-        const made = await tx
-          .select({ id: itemStock.id })
-          .from(itemStock)
-          .innerJoin(itemPurchased, eq(itemStock.item, itemPurchased.id))
-          .where(eq(itemPurchased.order, order.id));
-        const onBill = made.filter((piece) => pieces.has(piece.id));
-        if (onBill.length === 0) throw new UserError("The piece made for this order must be on the bill.");
-
-        advance = order.amtPaid ?? 0;
-        if (order.rateBooked && order.bookedRate) {
-          for (const piece of onBill) {
-            bookedRates.set(piece.id, purityRate(order.bookedRate, pieces.get(piece.id)?.melting ?? 0));
-          }
-        }
-      }
-
-      const lines = payload.items.map((item) => {
-        const rate = bookedRates.get(item.stockId) ?? round2(item.rate);
-        return {
-          item: item.stockId,
-          rate,
-          makingPct: item.makingPct,
-          ...priceSaleLine({ netWeight: pieces.get(item.stockId)?.netWeight ?? 0, rate, makingPct: item.makingPct }),
-        };
-      });
-      // A loose line is priced the same way, on the weight sold.
-      const looseLines = loose.map((line) => ({
-        itemType: line.itemTypeId,
-        weight: line.weight,
-        melting: line.melting,
-        lotWastage: line.wastage,
-        lotMaking: line.making,
-        pieces: line.pieces,
-        rate: line.rate,
-        makingPct: line.makingPct,
-        ...priceSaleLine({ netWeight: line.weight, rate: line.rate, makingPct: line.makingPct }),
-      }));
-
-      const computedAmt = round2([...lines, ...looseLines].reduce((sum, line) => sum + line.amt, 0));
-      if (discount > computedAmt) throw new UserError("Discount is more than the bill amount.");
-      const totalAmt = round2(computedAmt - discount);
-      const oldGoldAmt = round2(oldGold.reduce((sum, old) => sum + old.amt, 0));
-      // A BC must be this customer's, matured, and have enough left on it. Locked, so two bills
-      // cannot spend the same balance.
-      for (const use of bcs) {
-        const [row] = await tx.select().from(bc).where(eq(bc.id, use.bcId)).for("update");
-        if (!row || row.customer !== customerId) throw new UserError("That BC is not this customer's.");
-        if (!row.maturedAt) throw new UserError("That BC has not matured yet.");
-        const { spent } = await bcTotals(tx, use.bcId);
-        if (use.amt > round2((row.value ?? 0) - spent)) throw new UserError("That is more than is left on the BC.");
-      }
-      const bcAmt = round2(bcs.reduce((sum, use) => sum + use.amt, 0));
-      // Money the shop holds for the customer, locked like a BC.
-      let lendId: string | null = null;
-      if (fromLend > 0) {
-        const account = await heldFor(tx, customerId);
-        if (fromLend > account.held) throw new UserError(`The shop holds only ${inr(account.held)} for this customer.`);
-        lendId = account.lendId;
-      }
-      const setOff = round2(advance + oldGoldAmt + bcAmt + fromLend);
-      if (setOff > totalAmt) {
-        throw new UserError("Advance, old metal, BC and money held together come to more than the bill total. Buy the old metal separately.");
-      }
-      // The payment goes to this bill as far as it needs; the rest pays what the customer already owes.
-      const paidOnBill = Math.min(paidAmt, round2(totalAmt - setOff));
-      const towardsOld = round2(paidAmt - paidOnBill);
-      const settled = round2(setOff + paidOnBill);
-
-      const [saleBill] = await tx.insert(itemSaleBill).values({
-        date,
-        customer: customerId,
-        order: payload.orderId ?? null,
-        computedAmt,
-        discount,
-        totalAmt,
-        paidAmt: settled,
-      }).returning();
-
-      if (lines.length > 0) await tx.insert(itemSale).values(lines.map((line) => ({ ...line, bill: saleBill.id })));
-      if (looseLines.length > 0) {
-        const soldLoose = await tx.insert(itemSale).values(looseLines.map((line) => ({ ...line, bill: saleBill.id }))).returning();
-        for (const line of soldLoose) {
-          const lot = { itemTypeId: line.itemType!, melting: line.melting ?? 0, wastage: line.lotWastage ?? 0, making: line.lotMaking ?? 0 };
-          await recordLoose(tx, {
-            itemType: lot.itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making,
-            direction: "out", weight: line.weight ?? 0, pieces: line.pieces,
-            sourceTable: "item_sale", sourceId: line.id, desc: "Sold on a sale bill", date,
-          });
-          await closeEmptyLot(tx, lot, date);
-        }
-      }
-
-      // None of these moves cash: the advance, the BC's instalments and the money held were
-      // recorded when taken, old metal is an exchange.
-      if (advance > 0) {
-        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: advance, mode: "order_advance" });
-      }
-      for (const use of bcs) {
-        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: use.amt, mode: "bc", bc: use.bcId });
-      }
-      if (lendId && fromLend > 0) {
-        // Spending it is the shop paying back what it held, in goods.
-        await tx.insert(lendEntry).values({ lend: lendId, date, type: "repayment", amt: fromLend, mode: "sale", sale: saleBill.id });
-        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: fromLend, mode: "lend" });
-      }
-      for (const old of oldGold) {
-        const [row] = await tx.insert(oldItem).values({
-          customer: customerId, date, ...old,
-          paidAmt: old.amt, saleBill: saleBill.id, status: "vault",
-        }).returning();
-        await tx.insert(itemSaleDetails).values({ sale: saleBill.id, date, amtPaid: old.amt, mode: "old_item" });
-        await logAudit(tx, user.id, { tableName: "old_item", recordId: row.id, action: "insert", newValues: row });
-      }
-
-      if (paidOnBill > 0 && isCashMode(payload.mode)) {
-        const [payment] = await tx.insert(itemSaleDetails).values({
-          sale: saleBill.id,
-          date: paidOn,
-          amtPaid: paidOnBill,
-          mode: payload.mode,
-        }).returning();
-        await recordCash(tx, {
-          direction: "in",
-          amt: paidOnBill,
-          location: locationFor(payload.mode),
-          sourceTable: "item_sale_details",
-          sourceId: payment.id,
-          desc: "Payment received on sale bill",
-          date: paidOn,
-        });
-      }
-      if (towardsOld > 0 && isCashMode(payload.mode)) {
-        const { left } = await payOldDues(tx, user.id, customerId, towardsOld, payload.mode, paidOn, saleBill.id);
-        if (left > 0) throw new UserError(`The payment is ${inr(left)} more than this bill and what the customer already owes.`);
-      }
-
+      const { saleBill, lines, looseLines, advance, towardsOld } = await writeSale(tx, user.id, sale);
       await logAudit(tx, user.id, {
         tableName: "item_sale_bill",
         recordId: saleBill.id,
         action: "insert",
-        newValues: { ...saleBill, lines, looseLines, advance, oldGold, bcs, fromLend, towardsOld },
+        newValues: { ...saleBill, lines, looseLines, advance, oldGold: sale.oldGold, bcs: sale.bcs, fromLend: sale.fromLend, towardsOld },
       });
       return saleBill.id;
     });
@@ -334,6 +49,42 @@ export async function createSale(payload: SalePayload) {
     return { success: true as const, id: saleId };
   } catch (error) {
     return { success: false as const, error: fail(error, "Failed to create the sale.")?.error };
+  }
+}
+
+// Correct a bill in place, as if it had been entered right the first time: its pieces, loose
+// metal, prices, discount, old metal, BC, money held, customer, day and the payment made with it.
+// Earlier days of the day book change with it. Payments received later stay on the bill. The
+// bill as it was is kept in the audit log with the reason. Owner only.
+export async function editSale(saleId: string, payload: SalePayload, reason: string) {
+  const owner = await requireOwner();
+
+  try {
+    if (!isUuid(saleId)) throw new UserError("Sale bill not found.");
+    if (!reason.trim()) throw new UserError("Write what was wrong with the bill.");
+    const sale = parseSale(payload);
+    await db.transaction(async (tx) => {
+      const undone = await unwriteSale(tx, saleId);
+      const { saleBill, lines, looseLines, advance } = await writeSale(tx, owner.id, sale, undone.rewrite);
+      // Money towards earlier dues paid along with the bill moves with the bill's payment day.
+      if (istDate(parseDbDate(sale.paidOn)) !== istDate(parseDbDate(undone.bill.date ?? undone.bill.createdAt))) {
+        await moveAlsoPaid(tx, undone.alsoPaid, sale.paidOn);
+      }
+      await logAudit(tx, owner.id, {
+        tableName: "item_sale_bill",
+        recordId: saleId,
+        action: "update",
+        oldValues: undone.before,
+        newValues: { ...saleBill, lines, looseLines, advance, oldGold: sale.oldGold, bcs: sale.bcs, fromLend: sale.fromLend, paidAmt: sale.paidAmt, paidOn: sale.paidOn, edited: reason.trim() },
+      });
+    });
+
+    revalidateSales();
+    revalidatePath(`/sales/${saleId}`);
+    revalidatePath("/parties");
+    return { success: true as const, id: saleId };
+  } catch (error) {
+    return { success: false as const, error: fail(error, "Could not save the corrected bill.")?.error };
   }
 }
 

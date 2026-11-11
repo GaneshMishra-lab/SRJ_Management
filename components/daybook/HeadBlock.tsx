@@ -46,12 +46,13 @@ export function HeadBlock({
             // only the party; the rest is written once, under the entry's own head.
             const cells = (
               <>
-                <span className="daybook-amt"><span className="daybook-ink">{money(line.amt, digits)}</span></span>
+                <span className="daybook-amt"><span className="daybook-ink">{entry.billPart && entry.billPart !== "first" ? "" : money(line.amt, digits)}</span></span>
                 <span className="daybook-what">
                   <span className="daybook-ink">
                     {entry.party}
                     {entry.tag && <> <span className="daybook-more" data-whole="">{t.tags[entry.tag]}</span></>}
                     {!line.contra && entry.weight !== null && <> <span className="daybook-more" data-whole="">{weightText(entry.weight, lang, digits)}</span></>}
+                    {!line.contra && entry.metal && <> <span className="daybook-more" data-whole="">{t.rec[entry.metal]}</span></>}
                     {line.fields.map((field) => field.type === "text" && entry.extra[field.key] && (
                       <Fragment key={field.key}> <span className="daybook-more">{entry.extra[field.key]}</span></Fragment>
                     ))}
@@ -62,7 +63,7 @@ export function HeadBlock({
               </>
             );
             return (
-              <li key={line.id} className="daybook-line" data-writing={written.has(entry.id) ? "" : undefined}>
+              <li key={line.id} className="daybook-line" data-writing={written.has(entry.id) ? "" : undefined} data-bill={line.contra ? undefined : entry.billPart}>
                 {/* A line the page can change itself opens in the form; any other opens where it was made. */}
                 {entry.editable && onOpen ? (
                   <button type="button" onClick={() => onOpen(entry)} className="daybook-row">{cells}</button>

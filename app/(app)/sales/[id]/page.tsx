@@ -14,7 +14,7 @@ import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
 import { dateOnly, dateTime, grams, inr, istDate, parseDbDate } from "@/lib/format";
 import { round2 } from "@/lib/pricing";
-import { linkClass, rowClass, tdClass, thClass } from "@/lib/styles";
+import { btn, linkClass, rowClass, tdClass, thClass } from "@/lib/styles";
 
 export default async function SaleBillPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -80,7 +80,11 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
           </>
         }
         subtitle={`Sale bill of ${dateOnly(b.date)}${sale.customerContact ? ` · ${sale.customerContact}` : ""}`}
-      />
+      >
+        {!cancelled && user.role === "owner" && (
+          <Link href={`/sales/${id}/edit`} className={btn("secondary")} title="Correct a mistake on this bill: pieces, prices, payment, customer or day">Edit bill</Link>
+        )}
+      </PageHeader>
 
       {cancelled && (
         <Notice tone="bad" title={`Cancelled on ${dateOnly(b.cancelledAt)}`}>
@@ -198,7 +202,7 @@ export default async function SaleBillPage({ params }: { params: Promise<{ id: s
         {!cancelled && user.role === "owner" && (
           <Card
             title="Cancel this bill"
-            hint={`For a bill entered wrongly or a sale that was undone. The bill is kept and marked cancelled, its pieces return to stock${cashReceived > 0 ? `, and the ${inr(cashReceived)} received is reversed in the cash ledger on the cancellation date` : ""}. Earlier days are not changed. Owner only; this cannot be undone.`}
+            hint={`For a sale that was undone (to fix a mistake on the bill, use Edit bill). The bill is kept and marked cancelled, its pieces return to stock${cashReceived > 0 ? `, and the ${inr(cashReceived)} received is reversed in the cash ledger on the cancellation date` : ""}. Earlier days are not changed. Owner only; this cannot be undone.`}
           >
             <ActionForm action={cancelSale.bind(null, id)} submitLabel="Cancel bill" tone="danger">
               <Field label="Reason" name="reason" type="text" placeholder="e.g. Wrong piece billed" required />

@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { oldItem } from "@/db/schema/sales";
-import { DataTable, linkClass, PageHeader, StatusBadge } from "@/components/ui";
+import { DataTable, linkClass, PageHeader, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { dateOnly, grams, inr } from "@/lib/format";
 import { btn } from "@/lib/styles";
@@ -22,6 +22,20 @@ export default async function OldGoldPage() {
     .orderBy(desc(oldItem.date), desc(oldItem.createdAt))
     .limit(100);
 
+  // What is still in the vault, per metal: its weight, its fine (weight × melting) and what it cost.
+  const inVault = await db
+    .select({
+      metal: oldItem.metal,
+      weight: sql<number>`coalesce(sum(${oldItem.weight}), 0)`.mapWith(Number),
+      fine: sql<number>`coalesce(sum(${oldItem.weight} * coalesce(${oldItem.melting}, 0) / 100), 0)`.mapWith(Number),
+      amt: sql<number>`coalesce(sum(${oldItem.amt}), 0)`.mapWith(Number),
+      count: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(oldItem)
+    .where(eq(oldItem.status, "vault"))
+    .groupBy(oldItem.metal);
+  const total = (metal: string) => inVault.find((row) => row.metal === metal) ?? { weight: 0, fine: 0, amt: 0, count: 0 };
+
   return (
     <div className="space-y-6">
       <PageHeader title="Old Gold" subtitle="Old metal bought, exchanged or taken over, and what became of it.">
@@ -30,6 +44,11 @@ export default async function OldGoldPage() {
           Buy old metal
         </Link>
       </PageHeader>
+
+      <Stats items={([["Gold", "Old gold"], ["Silver", "Old silver"], ["Phuli", "Old phuli"]] as const).map(([metal, name]) => {
+        const row = total(metal);
+        return { name: `${name} in vault`, value: grams(row.weight), note: `${row.count} ${row.count === 1 ? "item" : "items"} · fine ${grams(row.fine)} · ${inr(row.amt)}` };
+      })} />
 
       <DataTable
         head={["Date", "Customer", "Metal", "Weight", "Melting", "Value", "Owed", "Source", "Status"]}

@@ -15,7 +15,7 @@ import { round2 } from "@/lib/pricing";
 import { project, tally } from "./calc";
 import { DEFAULT_INVOCATION } from "./i18n";
 import { KINDS } from "./kinds";
-import type { Entry, Head, PayMode, Side, Source, Tag } from "./types";
+import { oldMetalOf, type Entry, type Head, type OldMetal, type PayMode, type Side, type Source, type Tag } from "./types";
 
 // The day book is read from the cash ledger: every entry any screen makes there is written under
 // a head. This file does the reading; nothing here changes anything.
@@ -75,6 +75,7 @@ type Detail = {
   weight?: number | null;
   note?: string | null;
   tag?: Tag;
+  metal?: OldMetal;
   href: string;
   source?: Source;
   // The money is already told by other lines of the day (a sale bill's own), so it is not written
@@ -126,6 +127,31 @@ async function getSales(start: string, end: string) {
     pieces: pieces.filter((piece) => piece.bill === bill.id).map((piece) => ({ ...piece, metal: metalOf(piece.stockMetal ?? piece.typeMetal) })),
     old: old.filter((item) => item.bill === bill.id),
     settled: settled.filter((row) => row.bill === bill.id),
+  }));
+}
+
+// Old metal taken in on a day other than on a sale bill (the bill writes its own): bought from a
+// customer, handed over against an order, or a defaulted pledge kept. Each is written in full
+// under the old-metal head, whatever cash moved, with what paid for it on the other side.
+async function getOldItems(start: string, end: string) {
+  const items = await db
+    .select({
+      id: oldItem.id, date: oldItem.date, metal: oldItem.metal, weight: oldItem.weight, amt: oldItem.amt,
+      order: oldItem.order, goldLoan: oldItem.goldLoan, party: entity.name,
+    })
+    .from(oldItem)
+    .leftJoin(entity, eq(oldItem.customer, entity.id))
+    .where(and(gte(oldItem.date, start), lt(oldItem.date, end), sql`${oldItem.saleBill} is null`, sql`coalesce(${oldItem.amt}, 0) > 0`))
+    .orderBy(asc(oldItem.date));
+  if (items.length === 0) return [];
+  // Money paid for an item on its own day, which the item's line already tells.
+  const paid = await db
+    .select({ old: oldItemPayment.oldItem, amt: oldItemPayment.amt })
+    .from(oldItemPayment)
+    .where(and(inArray(oldItemPayment.oldItem, items.map((item) => item.id)), gte(oldItemPayment.date, start), lt(oldItemPayment.date, end)));
+  return items.map((item) => ({
+    ...item,
+    paidToday: round2(paid.filter((row) => row.old === item.id).reduce((total, row) => total + (row.amt ?? 0), 0)),
   }));
 }
 
@@ -188,14 +214,21 @@ const lookups: Record<string, (ids: string[], day: string) => Promise<Found>> = 
       .where(inArray(supplierReturnSettlement.id, ids));
     return found(rows, (row) => ({ kind: `supplier_return.${metalOf(row.metal)}`, party: row.party, href: `/inventory/${row.piece}` }));
   },
-  old_item_payment: async (ids) => {
+  old_item_payment: async (ids, day) => {
     const rows = await db
-      .select({ id: oldItemPayment.id, old: oldItem.id, metal: oldItem.metal, weight: oldItem.weight, party: entity.name })
+      .select({ id: oldItemPayment.id, old: oldItem.id, metal: oldItem.metal, weight: oldItem.weight, amt: oldItem.amt, date: oldItem.date, party: entity.name })
       .from(oldItemPayment)
       .innerJoin(oldItem, eq(oldItemPayment.oldItem, oldItem.id))
       .leftJoin(entity, eq(oldItem.customer, entity.id))
       .where(inArray(oldItemPayment.id, ids));
-    return found(rows, (row) => ({ kind: `old.${metalOf(row.metal)}`, party: row.party, weight: row.weight, href: `/old-gold/${row.old}` }));
+    // An old item with a value is written in full on its own day (see getOldItems), so money paid
+    // for it that day is already told; paid on a later day, it is the shop paying what it owed,
+    // taken off सावकारी. An opening item has no value and is written as plain old metal bought.
+    return found(rows, (row) => (row.amt ?? 0) > 0
+      ? (onDay(row.date, day)
+        ? { kind: `old.${metalOf(row.metal)}`, party: row.party, href: `/old-gold/${row.old}`, written: true }
+        : { kind: "borrow_repaid", party: row.party, tag: "forOldMetal", href: `/old-gold/${row.old}` })
+      : { kind: `old.${metalOf(row.metal)}`, party: row.party, weight: row.weight, metal: oldMetalOf(row.metal), href: `/old-gold/${row.old}` });
   },
   gold_loan: async (ids) => {
     const rows = await db
@@ -321,12 +354,13 @@ const unassigned = (side: Side, page: 1 | 2): Head => ({
 // One day of the book: its entries, the cash brought forward, and where cash and bank stand at its end.
 export async function getDay(day: string, heads: Head[]) {
   const { start, end } = istDayRange(day);
-  const [rows, before, after, rules, sales] = await Promise.all([
+  const [rows, before, after, rules, sales, olds] = await Promise.all([
     db.select().from(cashLedger).where(and(gte(cashLedger.date, start), lt(cashLedger.date, end))).orderBy(asc(cashLedger.date), asc(cashLedger.createdAt)),
     cashBalances(start),
     cashBalances(end),
     getRules(),
     getSales(start, end),
+    getOldItems(start, end),
   ]);
 
   const idsBy = new Map<string, string[]>();
@@ -416,6 +450,7 @@ export async function getDay(day: string, heads: Head[]) {
         weight: detail?.weight ?? null,
         note: detail?.note ?? null,
         tag: detail?.tag ?? null,
+        metal: detail?.metal,
         editable: Boolean(detail?.source),
         source: detail?.source ?? null,
         href: detail?.href ?? ledgerHref,
@@ -452,15 +487,30 @@ export async function getDay(day: string, heads: Head[]) {
     };
 
     if (onDay(sale.date, day)) {
-      for (const piece of sale.pieces) {
-        // Written as the book has it: the piece and its label, its weight, then the customer.
-        const name = [piece.name, piece.label].filter((part) => part !== null).join("#");
-        write(piece.id, `sale.${piece.metal}`, "in", piece.amt ?? 0, { party: name || sale.party, weight: piece.netWeight ?? piece.looseWeight, note: name ? sale.party : null });
+      // Each piece on its own line as the book has it (the piece and its label, its weight), but the
+      // money only once: the bill's amount for that metal, less the discount on the metal most of the
+      // bill is in, on the first piece's line with the customer's name. The pieces after it are
+      // written with no amount and no name. (Two heads, should a bill mix gold and silver.)
+      const discount = sale.discount ?? 0;
+      for (const metal of ["gold", "silver"] as const) {
+        const ofMetal = sale.pieces.filter((piece) => piece.metal === metal);
+        const net = round2(sum(ofMetal) - (`sale.${metal}` === billKind ? discount : 0));
+        if (ofMetal.length === 0 || net <= 0) continue;
+        ofMetal.forEach((piece, index) => {
+          const name = [piece.name, piece.label].filter((part) => part !== null).join("#");
+          const first = index === 0;
+          const billPart = ofMetal.length === 1 ? undefined : first ? "first" : index === ofMetal.length - 1 ? "last" : "middle";
+          entries.push({
+            id: `${sale.id}:${piece.id}`, day, headId: place(rules.get(`sale.${metal}`), "in"), flow: "in", bank: false,
+            amt: first ? net : 0, billPart,
+            party: name || (first ? sale.party : null), weight: piece.netWeight ?? piece.looseWeight, purity: null, rate: null,
+            note: first && name ? sale.party : null, mode: "cash", extra: {}, tag: null, editable: false, source: null, href: `/sales/${sale.id}`,
+          });
+        });
       }
-      write("discount", billKind, "out", sale.discount ?? 0, { tag: "discount" });
       for (const off of setOffs) write(off.id, off.kind, "out", off.amt, { tag: off.tag });
       // Old metal taken in exchange is old metal bought.
-      for (const old of sale.old) write(old.id, `old.${metalOf(old.metal)}`, "out", old.amt ?? 0, { weight: old.weight, href: `/old-gold/${old.id}` });
+      for (const old of sale.old) write(old.id, `old.${metalOf(old.metal)}`, "out", old.amt ?? 0, { weight: old.weight, metal: oldMetalOf(old.metal), href: `/old-gold/${old.id}` });
       write("due", "sale_due", "out", round2(unsettled - sum(money.filter((row) => onDay(row.date, day)))));
     }
     // A cancelled bill is taken back off the page on the day it is cancelled: the sale, the money
@@ -468,8 +518,29 @@ export async function getDay(day: string, heads: Head[]) {
     if (onDay(sale.cancelledAt, day)) {
       write("cancelled", billKind, "out", total, { tag: "cancelled" });
       for (const off of setOffs) write(`${off.id}:back`, off.kind, "in", off.amt, { tag: "cancelled" });
-      for (const old of sale.old) write(`${old.id}:back`, `old.${metalOf(old.metal)}`, "in", old.amt ?? 0, { weight: old.weight, tag: "refund", href: `/old-gold/${old.id}` });
+      for (const old of sale.old) write(`${old.id}:back`, `old.${metalOf(old.metal)}`, "in", old.amt ?? 0, { weight: old.weight, metal: oldMetalOf(old.metal), tag: "refund", href: `/old-gold/${old.id}` });
       write("due:cancelled", "sale_due", "in", round2(unsettled - sum(money)), { tag: "cancelled" });
+    }
+  }
+
+  // Old metal taken in (not on a sale bill), written in full under the old-metal head. The other
+  // side is what paid for it: cash already written by the cash ledger (marked as told above), the
+  // part still owed to the customer under सावकारी, an order's advance under सावकारी, or a
+  // defaulted pledge cleared under गिरवी. So the page still closes on the cash in the drawer.
+  for (const old of olds) {
+    const amt = old.amt ?? 0;
+    const base = {
+      day, bank: false, party: old.party, purity: null, rate: null, note: null, mode: "cash" as const, extra: {},
+      editable: false, source: null, href: `/old-gold/${old.id}`,
+    };
+    entries.push({ ...base, id: `old:${old.id}`, headId: place(rules.get(`old.${metalOf(old.metal)}`), "out"), flow: "out", amt, weight: old.weight, tag: null, metal: oldMetalOf(old.metal) });
+    const other = (kind: string, value: number, tag: Tag, href = base.href) => {
+      if (value > 0) entries.push({ ...base, id: `old:${old.id}:${kind}`, headId: place(rules.get(kind), "in"), flow: "in", amt: value, weight: null, tag, href });
+    };
+    if (old.order) other(`order.${metalOf(old.metal)}`, amt, "advance", `/orders/${old.order}`);
+    else if (old.goldLoan) other("girvi_received", amt, "pledgeTaken", `/gold-loans/${old.goldLoan}`);
+    else {
+      other("borrow_taken", round2(amt - old.paidToday), "forOldMetal");
     }
   }
 

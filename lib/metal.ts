@@ -35,9 +35,21 @@ export async function recordMetal(
   return row;
 }
 
-// Langdi is valued as fine: (weight - refining deduction) × tested purity ÷ the standard it is counted in.
-export const langdiToFine = (weight: number, testedPurity: number, deduction: number, standard: Standard) =>
-  round3(((weight - deduction) * testedPurity) / STANDARD_PURITY[standard]);
+// Langdi is valued as fine: (weight - refining deduction) × purity ÷ the standard it is counted in.
+// When langdi is given away, the purity used is the tested one less the trade's agreed cut.
+export const langdiToFine = (weight: number, purity: number, deduction: number, standard: Standard) =>
+  round3(((weight - deduction) * purity) / STANDARD_PURITY[standard]);
+
+// The trade-agreed purity cut sent with a langdi form, checked against the tested purity.
+// Returns the cut (0 when left empty) or an error message.
+export function purityCutOf(raw: FormDataEntryValue | null, testedPurity: number): { cut: number } | { error: string } {
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (value === "") return { cut: 0 };
+  const cut = round3(Number(value));
+  if (!Number.isFinite(cut) || cut < 0) return { error: "Purity cut cannot be below zero." };
+  if (cut >= testedPurity) return { error: "Purity cut must be less than the tested purity." };
+  return { cut };
+}
 
 const signedMetal = sql<number>`coalesce(sum(case when ${metalLedger.direction} = 'in' then ${metalLedger.weight} else -${metalLedger.weight} end), 0)`.mapWith(Number);
 

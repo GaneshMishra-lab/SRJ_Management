@@ -10,7 +10,7 @@ import { resolveEntity } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { istDate, istDayRange } from "@/lib/format";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
-import { isBullionStandard, isMetal, langdiToFine, metalBalances, recordMetal } from "@/lib/metal";
+import { isBullionStandard, isMetal, langdiToFine, metalBalances, purityCutOf, recordMetal } from "@/lib/metal";
 import { round2, round3 } from "@/lib/pricing";
 
 function revalidateMetal() {
@@ -85,18 +85,21 @@ export async function tradeLangdi(_prev: FormState, formData: FormData): Promise
   if (weight <= 0) return { error: "Enter the langdi weight." };
   if (testedPurity <= 0 || testedPurity > 100) return { error: "Tested purity must be between 0 and 100." };
   if (deduction < 0 || deduction >= weight) return { error: "Refining deduction must be less than the weight." };
+  const cutOrError = purityCutOf(formData.get("purityCut"), testedPurity);
+  if ("error" in cutOrError) return cutOrError;
+  const { cut } = cutOrError;
 
   try {
     const date = entryDate(formData);
     await db.transaction(async (tx) => {
       const party = await resolveEntity(tx, user.id, formData, "supplier");
-      const fine = langdiToFine(weight, testedPurity, deduction, standard);
+      const fine = langdiToFine(weight, round3(testedPurity - cut), deduction, standard);
 
       const [trade] = await tx.insert(fineTrade).values({
         date, type: "purchase", entity: party, metal, standard, weight: fine, mode: "langdi",
       }).returning();
       await tx.insert(langdiLedger).values({
-        date, metal, direction: "out", weight, testedPurity,
+        date, metal, direction: "out", weight, testedPurity, purityCut: cut || null,
         refiningDeduction: deduction, fineWeight: fine, standard,
         sourceTable: "fine_trade", sourceId: trade.id, entity: party, desc: "Traded for bullion",
       });
@@ -104,7 +107,7 @@ export async function tradeLangdi(_prev: FormState, formData: FormData): Promise
         metal, standard, direction: "in", weight: fine,
         sourceTable: "fine_trade", sourceId: trade.id, desc: `Bullion received for ${weight} g langdi`, date,
       });
-      await logAudit(tx, user.id, { tableName: "fine_trade", recordId: trade.id, action: "insert", newValues: { ...trade, langdiWeight: weight, testedPurity, deduction } });
+      await logAudit(tx, user.id, { tableName: "fine_trade", recordId: trade.id, action: "insert", newValues: { ...trade, langdiWeight: weight, testedPurity, purityCut: cut, deduction } });
     });
   } catch (error) {
     return fail(error, "Could not record the langdi trade.");

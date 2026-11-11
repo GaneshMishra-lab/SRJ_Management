@@ -14,6 +14,29 @@ export function priceSaleLine(line: { netWeight: number; rate: number; makingPct
   return { metalValue, makingAmt, gst, amt: round2(metalValue + makingAmt + gst) };
 }
 
+// The other way round: the making % that brings a line to a final price (GST included), for when
+// the price is agreed first. Kept to 3 decimals, as the bill stores it, and chosen so the line
+// comes to the price exactly where it can (otherwise within a few paise). Null when the price is
+// below metal value plus GST, as making cannot be negative.
+export function makingPctFor(line: { netWeight: number; rate: number }, finalAmt: number): number | null {
+  const metalValue = round2(line.netWeight * line.rate);
+  if (!(metalValue > 0) || !(finalAmt > 0)) return null;
+  if (finalAmt < priceSaleLine({ ...line, makingPct: 0 }).amt) return null;
+  const estimate = Math.round(((finalAmt / (1 + GST_PCT / 100) / metalValue - 1) * 100) * 1000) / 1000;
+  let best: number | null = null;
+  let bestGap = Infinity;
+  for (let k = -30; k <= 30; k++) {
+    const pct = Math.round((estimate + k / 1000) * 1000) / 1000;
+    if (pct < 0) continue;
+    const gap = Math.abs(priceSaleLine({ ...line, makingPct: pct }).amt - finalAmt);
+    if (gap < bestGap - 1e-9) {
+      best = pct;
+      bestGap = gap;
+    }
+  }
+  return best;
+}
+
 // What a bought piece costs at a rate per gram of fine metal, the way a purchase bill prices it:
 // fine weight (net × (melting + wastage) ÷ the rate's purity) at that rate, plus the making per
 // gram of net weight and any extra charges. The daily rate is for pure metal, so purity 100.

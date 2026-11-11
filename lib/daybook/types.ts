@@ -5,7 +5,12 @@ export type Digits = "deva" | "latn";
 export type PayMode = "cash" | "upi" | "cheque" | "bank" | "online";
 
 // A word the book adds to an entry made elsewhere in the app, written in the reader's language.
-export type Tag = "interest" | "principal" | "refund" | "deposit" | "withdrawal" | "adjustment" | "discount" | "advance" | "bc" | "fromLend" | "cancelled" | "topup" | "penalty" | "fromDeposit" | "toBc";
+export type Tag = "interest" | "principal" | "refund" | "deposit" | "withdrawal" | "adjustment" | "discount" | "advance" | "bc" | "fromLend" | "cancelled" | "topup" | "penalty" | "fromDeposit" | "toBc" | "forOldMetal" | "pledgeTaken";
+
+// Old metal as the shop takes it in. Phuli is low-purity gold, written apart from gold.
+export type OldMetal = "gold" | "silver" | "phuli";
+const oldMetals: Record<string, OldMetal> = { Gold: "gold", Silver: "silver", Phuli: "phuli" };
+export const oldMetalOf = (metal: string | null): OldMetal | undefined => (metal ? oldMetals[metal] : undefined);
 
 // A field a head asks for beyond the common ones, such as the item pledged under गिरवी.
 export type ExtraField = { key: string; labelMr: string; labelEn: string; type: "text" | "number"; required?: boolean };
@@ -44,6 +49,10 @@ export type Entry = {
   mode: PayMode;
   extra: Record<string, string>;
   tag: Tag | null;
+  metal?: OldMetal; // old metal bought or taken in exchange: which kind, named on the line
+  // A sale bill of several pieces: where this line sits among them. Its amount is written on the
+  // first line only, and the lines are bracketed together.
+  billPart?: "first" | "middle" | "last";
   editable: boolean; // typed in the day book itself, or one of the two kinds above, so it opens in the popup
   source: Source | null;
   href: string | null; // otherwise, the screen where it was made

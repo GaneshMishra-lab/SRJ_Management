@@ -67,16 +67,17 @@ export default async function MetalPage() {
           </ActionForm>
         </Card>
 
-        <Card title="Trade langdi for bullion" hint="Fine received = (weight − deduction) × tested purity ÷ standard.">
+        <Card title="Trade langdi for bullion" hint="Fine received = (weight − deduction) × (tested purity − agreed cut) ÷ standard. E.g. tested 76.2 with a 0.1 cut is valued at 76.1.">
           <ActionForm action={tradeLangdi} submitLabel="Record langdi trade">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <SelectField label="Metal" name="metal" options={metalOptions} />
               <SelectField label="Standard received" name="standard" options={standardOptions} />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Grams label="Langdi weight (g)" name="weight" required />
-              <Percent label="Tested purity (%)" name="testedPurity" required />
               <Grams label="Deduction (g)" name="deduction" min="0" defaultValue="0" />
+              <Percent label="Tested purity (%)" name="testedPurity" required />
+              <Percent label="Purity cut (%)" name="purityCut" min="0" defaultValue="0" />
             </div>
             <EntityFields label="Dealer" entities={dealers} newLabel="Or a new dealer" />
             <DateField />
@@ -160,7 +161,9 @@ export default async function MetalPage() {
                 <input name="testedPurity" type="number" step="0.001" min="0.001" max="100" placeholder="Tested %" aria-label="Tested purity" className="w-28 rounded-lg bg-card border-line text-sm px-3 py-2 text-fg outline-none" required />
               </ActionForm>
             </div>
-          ) : (entry.testedPurity ? `${entry.testedPurity}%` : "-"),
+          ) : entry.testedPurity
+            ? (entry.purityCut ? `${entry.testedPurity}% − ${entry.purityCut} = ${round3(entry.testedPurity - entry.purityCut)}%` : `${entry.testedPurity}%`)
+            : "-",
           entry.fineWeight ? `${grams(entry.fineWeight)} (${entry.standard})` : "-",
         ])}
       />

@@ -2,7 +2,7 @@
 
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { isBullionStandard, isStandard, recordMetal } from "@/lib/metal";
-import { convertStandard, Standard } from "@/lib/standards";
+import { convertStandard, fineStandardOf, Standard } from "@/lib/standards";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
@@ -22,7 +22,7 @@ import { getCurrentUser, logAudit } from "@/lib/dal";
 import { huidOf, nextLabel } from "@/lib/entities";
 import { entryDate, fail, FormState, isUuid, num, text, UserError } from "@/lib/form";
 import { isCashMode, locationFor, recordCash } from "@/lib/ledger";
-import { looseBalances, looseOfPurchase, lotKey, lotTerms, recordLoose } from "@/lib/loose";
+import { closeEmptyLot, looseBalances, looseOfPurchase, lotKey, lotTerms, recordLoose } from "@/lib/loose";
 import { round2, round3 } from "@/lib/pricing";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -256,6 +256,64 @@ export async function writeOffLooseLeftover(itemTypeId: string, _prev: FormState
   revalidatePath(`/inventory/loose/${itemTypeId}`);
   revalidatePath("/dashboard");
   return { success: `${Math.abs(gone)} g written off; the lot is closed.` };
+}
+
+// Coins, biscuits and slabs of fine metal are kept as loose stock so they can be sold on a bill.
+// When one is to be handed to a supplier instead, it is moved here into the fine metal ledger, so the
+// bill's "Pay in fine" can draw on it. Only a gold or silver lot at exactly 99.5 or 99.9 melting can
+// move: its grams go into that standard unchanged. No sale and no cash is recorded.
+export async function moveLooseToMetal(itemTypeId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await getCurrentUser();
+  const lot = lotFrom(itemTypeId, formData);
+  const weight = round3(num(formData, "weight"));
+  const pieces = num(formData, "pieces");
+  if (!isUuid(itemTypeId)) return { error: "Item type not found." };
+  if (!lot) return { error: "Choose the lot." };
+  if (weight <= 0) return { error: "Enter the weight being moved." };
+  const standard = fineStandardOf(lot.melting);
+  if (!standard) return { error: "Only a lot at 99.5 or 99.9 melting can be moved to fine metal." };
+
+  let moved = "";
+  try {
+    const date = entryDate(formData);
+    await db.transaction(async (tx) => {
+      // Lock the type so a sale cannot take the same pieces at the same time.
+      const [type] = await tx.select().from(itemType).where(eq(itemType.id, itemTypeId)).for("update");
+      if (!type?.loose) throw new UserError("Item type not found.");
+      if (type.metal !== "Gold" && type.metal !== "Silver") throw new UserError("Only gold or silver can be moved to fine metal.");
+      if (type.counted && (!Number.isInteger(pieces) || pieces <= 0)) throw new UserError("Enter how many pieces are being moved.");
+
+      const found = (await looseBalances(tx, [itemTypeId])).find((row) => lotKey(row) === lotKey(lot));
+      if (!found || weight > found.weight) throw new UserError(`That lot has only ${found?.weight ?? 0} g in stock.`);
+      if (type.counted && pieces > found.pieces) throw new UserError(`That lot has only ${found.pieces} pieces in stock.`);
+
+      const what = `${type.counted ? `${pieces} pcs, ` : ""}${weight} g ${type.name}`;
+      const entry = await recordLoose(tx, {
+        itemType: itemTypeId, melting: lot.melting, wastage: lot.wastage, making: lot.making,
+        direction: "out", weight, pieces: type.counted ? pieces : null,
+        sourceTable: "metal_transfer", desc: `Moved to fine ${type.metal} ${standard}`, date,
+      });
+      const metal = await recordMetal(tx, {
+        metal: type.metal, standard, direction: "in", weight,
+        sourceTable: "loose_stock_ledger", sourceId: entry.id, desc: `Moved from stock: ${what}`, date,
+      });
+      // The last piece gone: a scale leftover within the limit is written off, as on a sale.
+      if (type.counted && pieces === found.pieces) await closeEmptyLot(tx, lot, date, entry.id);
+      await logAudit(tx, user.id, {
+        tableName: "loose_stock_ledger", recordId: entry.id, action: "insert",
+        newValues: { ...entry, lot: `${type.name} ${lotTerms(lot)}`, metalEntry: metal.id, standard },
+      });
+      moved = `${what} moved to fine ${type.metal} ${standard}.`;
+    });
+  } catch (error) {
+    return fail(error, "Could not move the stock to fine metal.");
+  }
+
+  revalidatePath("/inventory");
+  revalidatePath(`/inventory/loose/${itemTypeId}`);
+  revalidatePath("/metal");
+  revalidatePath("/dashboard");
+  return { success: moved };
 }
 
 // Whether a loose type is kept by piece count as well as weight (phuli, nath) or by weight alone.
