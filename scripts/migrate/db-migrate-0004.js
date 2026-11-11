@@ -1,6 +1,6 @@
 // Applies drizzle/0004_sale_cancellation.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0004.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0004.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0004.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0004.js --apply    commit
 // Adds cancelled_at and cancel_reason to item_sale_bill and rebuilds entity_balance so that
 // cancelled bills are not counted as dues. --apply also records 0004 in drizzle's migration
 // history, so `drizzle-kit migrate` stays in step.

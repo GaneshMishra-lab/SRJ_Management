@@ -1,6 +1,6 @@
 // Applies drizzle/0011_stock_check.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0011.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0011.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0011.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0011.js --apply    commit
 // Adds the stock register: stock_check (one dated check per kind of stock and metal) and its lines
 // (book, counted and locker figures per item type). Only new tables; no existing row is touched.
 // --apply also records 0011 in drizzle's migration history, so `drizzle-kit migrate` stays in step.

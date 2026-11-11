@@ -1,6 +1,6 @@
 // Applies drizzle/0006_daybook.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0006.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0006.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0006.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0006.js --apply    commit
 // Adds the day book's four tables (daybook_head, daybook_rule, daybook_entry, daybook_settings)
 // and fills in the heads of the handwritten book, where each kind of app entry is written, and
 // the invocation lines. No existing table is changed. --apply also records 0006 in drizzle's

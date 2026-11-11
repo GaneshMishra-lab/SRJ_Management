@@ -1,6 +1,6 @@
 // Applies drizzle/0008_loose_stock.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0008.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0008.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0008.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0008.js --apply    commit
 // Adds loose metal (mani) kept by weight: item_type.loose and pieces_per_gram, the new
 // loose_stock_ledger table, and item_type / weight / melting on item_sale for a loose line on a
 // sale bill. Only new columns and a new table; no row already recorded is changed. --apply also

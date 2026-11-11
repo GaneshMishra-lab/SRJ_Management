@@ -1,6 +1,6 @@
 // Applies drizzle/0007_credit_and_heads.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0007.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0007.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0007.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0007.js --apply    commit
 // Adds the supplier's due date to purchase bills (bill.due_date), credit to misc purchases
 // (misc_trade.paid_amt and due_date, with a new misc_trade_payment table), and moves eight kinds of
 // app entry to the day book heads the shop writes them under. No money already recorded is

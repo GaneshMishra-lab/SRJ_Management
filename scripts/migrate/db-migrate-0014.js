@@ -1,21 +1,24 @@
-// Applies drizzle/0012_lend_note.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0012.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0012.js --apply    commit
-// Adds an optional note to each सावकारी (lend) entry, e.g. "to be used with BC no. 14". One new
-// nullable column; no existing row is changed.
-// --apply also records 0012 in drizzle's migration history, so `drizzle-kit migrate` stays in step.
+// Applies drizzle/0014_loose_lots.sql in one transaction.
+//   node --env-file=.env.local scripts/migrate/db-migrate-0014.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0014.js --apply    commit
+// Loose lots keep their purchase terms and a piece count: wastage, making (per gram) and pieces on
+// loose_stock_ledger, the same on a loose sale line (so a cancelled bill puts them back in the same
+// lot), and item_type.counted for types kept by count as well as weight (phuli, nath). New columns
+// only, nullable or with a default of 0 / false; no existing value is changed.
+// --apply also records 0014 in drizzle's migration history, so `drizzle-kit migrate` stays in step.
 import { Pool } from '@neondatabase/serverless';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const TAG = '0012_lend_note';
+const TAG = '0014_loose_lots';
 const apply = process.argv.includes('--apply');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const client = await pool.connect();
 
 const counts = async () => (await client.query(
-  `SELECT (SELECT count(*)::int FROM lend_entry) AS lend_entries,
-          (SELECT coalesce(sum(amt), 0)::float FROM lend_entry) AS lend_total,
+  `SELECT (SELECT count(*)::int FROM loose_stock_ledger) AS loose_rows,
+          (SELECT coalesce(sum(weight), 0)::float FROM loose_stock_ledger) AS loose_weight,
+          (SELECT count(*)::int FROM item_sale) AS sale_lines,
           (SELECT count(*)::int FROM audit_log) AS audit_rows`,
 )).rows[0];
 
@@ -38,12 +41,12 @@ try {
   }
 
   const after = await counts();
-  const { rows: checks } = await client.query("SELECT count(*)::int AS note_column FROM information_schema.columns WHERE table_name = 'lend_entry' AND column_name = 'note'");
+  const { rows: checks } = await client.query("SELECT count(*)::int AS new_columns FROM information_schema.columns WHERE (table_name, column_name) IN (('loose_stock_ledger', 'wastage'), ('loose_stock_ledger', 'making'), ('loose_stock_ledger', 'pieces'), ('item_sale', 'lot_wastage'), ('item_sale', 'lot_making'), ('item_sale', 'pieces'), ('item_type', 'counted'))");
   const { rows: recorded } = await client.query('SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations');
 
   console.log('before:', before);
   console.log('after: ', after);
-  console.log('new column:', checks[0]);
+  console.log('new columns (want 7):', checks[0]);
   console.log(`migrations recorded: ${recorded[0].n} (journal lists ${journal.length})`);
   if (JSON.stringify(before) !== JSON.stringify(after)) throw new Error('Existing rows changed: they must not.');
 

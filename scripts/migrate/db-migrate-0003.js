@@ -1,6 +1,6 @@
 // Applies drizzle/0003_spec_alignment.sql in one transaction.
-//   node --env-file=.env.local db-migrate-0003.js            dry run, rolled back
-//   node --env-file=.env.local db-migrate-0003.js --apply    commit
+//   node --env-file=.env.local scripts/migrate/db-migrate-0003.js            dry run, rolled back
+//   node --env-file=.env.local scripts/migrate/db-migrate-0003.js --apply    commit
 // The live database was built with `drizzle-kit push`, so drizzle's migration
 // history is empty; --apply also records 0000-0003 as applied so that
 // `drizzle-kit migrate` works from here on.
