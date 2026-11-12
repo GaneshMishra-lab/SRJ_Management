@@ -10,6 +10,8 @@
 .daybook-book {
   --paper: #f8f2e2;
   --ink: #1c3b8e;
+  --ink-in: #1b6b35; /* the जमा heads: money coming in */
+  --ink-out: #b3261e; /* the नावे heads: money going out */
   --rule: rgb(52 96 170 / 0.16);
   --text: 1.25rem;
   --line: 2.125rem; /* one ruled line */
@@ -89,6 +91,20 @@
 
 .daybook-col {
   min-width: 0;
+}
+
+/* The heads of each side, with their totals and strokes, are inked green for money in and red for
+   money out. The entries under them stay in the book's blue. */
+.daybook-col[data-side="credit"] :is(.daybook-col-title, .daybook-head-row) {
+  color: var(--ink-in);
+}
+
+.daybook-col[data-side="debit"] :is(.daybook-col-title, .daybook-head-row) {
+  color: var(--ink-out);
+}
+
+.daybook-sides {
+  display: none;
 }
 
 .daybook-col-title {
@@ -368,19 +384,63 @@ a.daybook-row:hover {
   }
 }
 
-/* A phone: जमा on top, नावे below. */
+/* A phone: जमा fills the sheet and नावे lies beside it, a swipe away. The two sides scroll up and
+   down together, so a swipe lands on नावे at the same height the reader had reached in जमा. */
 @container (max-width: 560px) {
-  .daybook-columns,
   .daybook-feet {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .daybook-lead {
+  .daybook-columns {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .daybook-columns::-webkit-scrollbar {
     display: none;
   }
 
-  .daybook-col[data-side="debit"] {
-    margin-top: var(--line);
+  .daybook-col {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Which side is showing: two dots under the sheet's date, the lit one in that side's colour. */
+  .daybook-sides {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: calc(var(--line) * -0.4);
+    height: calc(var(--line) * 0.4);
+    font-size: 0.8em;
+    line-height: 1;
+  }
+
+  .daybook-sides span {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: currentColor;
+    opacity: 0.25;
+    transition: opacity 0.2s;
+  }
+
+  .daybook-sides span[data-side="credit"] {
+    color: var(--ink-in);
+  }
+
+  .daybook-sides span[data-side="debit"] {
+    color: var(--ink-out);
+  }
+
+  .daybook-sides span[data-on] {
+    opacity: 1;
   }
 
   .daybook-invocation {

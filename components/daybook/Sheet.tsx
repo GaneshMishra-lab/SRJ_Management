@@ -17,6 +17,7 @@ export function Sheet({
   lang,
   digits,
   written,
+  showing,
   onAdd,
   onOpen,
 }: {
@@ -30,6 +31,7 @@ export function Sheet({
   lang: Lang;
   digits: Digits;
   written: ReadonlySet<string>;
+  showing: Side; // the side a phone shows; a wider page shows both
   onAdd?: (head: Head) => void;
   onOpen?: (entry: Entry) => void;
 }) {
@@ -47,6 +49,10 @@ export function Sheet({
       {first
         ? <p className="daybook-date">{date}</p>
         : <p className="daybook-date" data-small="">{date} · {t.sheet} {toDigits(String(no), digits)}</p>}
+
+      <p className="daybook-sides" aria-hidden="true">
+        {sides.map((side) => <span key={side} data-side={side} data-on={side === showing ? "" : undefined} />)}
+      </p>
 
       <div className="daybook-ruled">
         <div className="daybook-columns">
