@@ -4,8 +4,12 @@ import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { entity } from "@/db/schema/entities";
 import { lend, lendEntry, loan, loanEntry } from "@/db/schema/finance";
-import { addLoanEntry, setLoanReminder } from "@/app/actions/loans";
+import { Pencil } from "lucide-react";
+import { addLoanEntry, deleteLoanEntry, setLoanReminder } from "@/app/actions/loans";
 import { ActionForm } from "@/components/ActionForm";
+import { RemoveButton } from "@/components/controls";
+import { isTypedLoanEntry, mayCorrect } from "@/lib/ledger";
+import { iconButtonClass } from "@/lib/styles";
 import { Card, DataTable, DateField, Field, linkClass, ModeField, PageHeader, Rupees, SelectField, Stats, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/dal";
 import { isUuid } from "@/lib/form";
@@ -24,7 +28,7 @@ const ON_A_BILL: Record<string, string> = { sale: "Used on a sale bill", sale_ca
 const INTO_BC: Record<string, string> = { bc: "Paid into a BC" };
 
 export default async function LoanAccountPage({ params }: { params: Promise<{ kind: string; id: string }> }) {
-  await getCurrentUser();
+  const user = await getCurrentUser();
   const { kind, id } = await params;
   if ((kind !== "given" && kind !== "taken") || !isUuid(id)) notFound();
   const words = KINDS[kind];
@@ -75,8 +79,8 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <DataTable
-            head={["Time", "Entry", "Mode", "Amount", "Left after it"]}
-            right={[3, 4]}
+            head={["Time", "Entry", "Mode", "Amount", "Left after it", ""]}
+            right={[3, 4, 5]}
             empty="No entries yet."
             rows={[...lines].reverse().map(({ entry, repayment, balance: after }) => [
               <span key="t" className="whitespace-nowrap">{dateTime(entry.date)}</span>,
@@ -86,8 +90,19 @@ export default async function LoanAccountPage({ params }: { params: Promise<{ ki
               <span key="m" className="capitalize">{ON_A_BILL[entry.mode ?? ""] || INTO_BC[entry.mode ?? ""] ? "No cash" : entry.mode}</span>,
               <span key="a" className={repayment ? "text-ok" : "text-fg"}>{repayment ? "−" : "+"} {inr(entry.amt)}</span>,
               inr(after),
+              isTypedLoanEntry(entry.mode) && mayCorrect(user.role, entry.date) ? (
+                <span key="x" className="inline-flex items-center justify-end gap-1">
+                  <Link href={`/loans/${kind}/${id}/entry/${entry.id}`} aria-label="Correct this entry" title="Correct this entry" className={`-my-2 ${iconButtonClass} hover:text-fg`}>
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Link>
+                  <RemoveButton action={deleteLoanEntry.bind(null, kind, entry.id)} label="Remove this entry" />
+                </span>
+              ) : "",
             ])}
           />
+          {user.role !== "owner" && lines.some(({ entry }) => isTypedLoanEntry(entry.mode) && !mayCorrect(user.role, entry.date)) && (
+            <p className="mt-2 text-[13px] text-fg-3">An entry of an earlier day can be corrected or removed by the owner only.</p>
+          )}
         </div>
 
         <Card title="New entry">

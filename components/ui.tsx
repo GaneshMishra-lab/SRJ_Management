@@ -112,10 +112,12 @@ export const DateField = ({
   label = "Date (today if left empty)",
   className = "max-w-md",
   time = true,
-}: { label?: string; className?: string; time?: boolean }) => (
+  day,
+  clock,
+}: { label?: string; className?: string; time?: boolean; day?: string; clock?: string }) => (
   <div className={`grid items-end gap-4 ${time ? "grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : ""} ${className}`}>
-    <Field label={label} name="date" type="date" max={istDate()} />
-    {time && <Field label="Time (now if left empty)" name="time" type="time" />}
+    <Field label={label} name="date" type="date" max={istDate()} defaultValue={day} />
+    {time && <Field label="Time (now if left empty)" name="time" type="time" defaultValue={clock} />}
   </div>
 );
 

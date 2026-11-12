@@ -56,6 +56,11 @@ export async function eraseCash(executor: Corrector, sourceTable: string, source
   return executor.delete(cashLedger).where(causedBy(sourceTable, sourceId)).returning();
 }
 
+// The loan and सावकारी lines a person types, and so may correct or remove: cash, online, and what
+// was owed before the app. The rest (money held spent on a sale bill or a BC, a cancelled bill's
+// money held again) belong to that bill or BC and are undone there.
+export const isTypedLoanEntry = (mode: string | null) => mode === "cash" || mode === "online" || mode === "opening";
+
 // Whether a user may correct or remove an entry, given when it happened (and when it is being
 // moved to). Today's entries are anyone's to put right. An earlier day is the owner's alone:
 // every later day's opening cash follows from it.
